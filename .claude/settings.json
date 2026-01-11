@@ -1,0 +1,35 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '\"[\" + (now | strftime(\"%Y-%m-%d %H:%M\")) + \"] PROMPT: \" + (.user_prompt | split(\"\\n\")[0][:100])' >> .claude/workflow-log.md 2>/dev/null || true"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read f; ext=\"${f##*.}\"; case \"$ext\" in js|jsx|ts|tsx) command -v prettier >/dev/null || npm install -g prettier; command -v eslint >/dev/null || npm install -g eslint; npx prettier --write \"$f\" 2>/dev/null; npx eslint --fix \"$f\" 2>/dev/null ;; py) command -v ruff >/dev/null || pip install ruff; ruff format \"$f\" 2>/dev/null ;; esac; } || true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"Task completed\" with title \"Claude Code\" sound name \"Glass\"'"
+          }
+        ]
+      }
+    ]
+  }
+}
