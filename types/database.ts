@@ -187,7 +187,7 @@ export interface ShareRequest {
   text?: string;
   title?: string;
   content?: string;
-  source?: SourceType;
+  source?: string; // Accepts any source identifier (ios_shortcut, share_sheet, etc.)
   content_type?: ContentType;
   metadata?: ItemMetadata;
   tags?: string[];
@@ -195,6 +195,7 @@ export interface ShareRequest {
 
 export interface ShareResponse {
   success: boolean;
+  action?: "saved" | "working" | "error";
   item_id?: string;
   job_id?: string;
   message?: string;

@@ -1,10 +1,11 @@
 /**
  * Web Vitals monitoring and reporting
- * Tracks Core Web Vitals: LCP, FID, CLS, FCP, TTFB
+ * Tracks Core Web Vitals: LCP, INP, CLS, FCP, TTFB
+ * Note: FID is deprecated in web-vitals v4+, replaced by INP
  */
 
 export interface WebVitalsMetric {
-  name: "LCP" | "FID" | "CLS" | "FCP" | "TTFB" | "INP";
+  name: "LCP" | "CLS" | "FCP" | "TTFB" | "INP";
   value: number;
   rating: "good" | "needs-improvement" | "poor";
   delta: number;
@@ -15,11 +16,10 @@ export interface WebVitalsMetric {
 // Thresholds per Google's Web Vitals recommendations
 const thresholds = {
   LCP: { good: 2500, poor: 4000 }, // Largest Contentful Paint
-  FID: { good: 100, poor: 300 }, // First Input Delay
   CLS: { good: 0.1, poor: 0.25 }, // Cumulative Layout Shift
   FCP: { good: 1800, poor: 3000 }, // First Contentful Paint
   TTFB: { good: 800, poor: 1800 }, // Time to First Byte
-  INP: { good: 200, poor: 500 }, // Interaction to Next Paint
+  INP: { good: 200, poor: 500 }, // Interaction to Next Paint (replaces FID)
 };
 
 function getRating(
@@ -86,8 +86,8 @@ export async function initWebVitals(
 
   try {
     // Dynamic import to keep bundle size small
-    const { onLCP, onFID, onCLS, onFCP, onTTFB, onINP } =
-      await import("web-vitals");
+    // Note: FID is deprecated in web-vitals v4+, replaced by INP
+    const { onLCP, onCLS, onFCP, onTTFB, onINP } = await import("web-vitals");
 
     const handleMetric =
       (name: keyof typeof thresholds) =>
@@ -108,7 +108,6 @@ export async function initWebVitals(
       };
 
     onLCP(handleMetric("LCP"));
-    onFID(handleMetric("FID"));
     onCLS(handleMetric("CLS"));
     onFCP(handleMetric("FCP"));
     onTTFB(handleMetric("TTFB"));
@@ -125,7 +124,7 @@ export async function initWebVitals(
  */
 export interface PerformanceBudget {
   LCP: number;
-  FID: number;
+  INP: number;
   CLS: number;
   FCP: number;
   TTFB: number;
@@ -134,7 +133,7 @@ export interface PerformanceBudget {
 
 export const defaultBudget: PerformanceBudget = {
   LCP: 2500, // ms
-  FID: 100, // ms
+  INP: 200, // ms (replaces FID)
   CLS: 0.1, // score
   FCP: 1800, // ms
   TTFB: 800, // ms

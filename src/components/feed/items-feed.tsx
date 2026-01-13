@@ -112,6 +112,7 @@ const mockItems: FeedItem[] = [
     description:
       "You saved 12 photos and 3 journal entries from this trip. Nova found a connection to your recent interest in outdoor gear reviews.",
     source: { name: "Photos" },
+    meta: {},
     memoryDate: "1 year ago today",
     memoryImages: [
       "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=200&q=80",
