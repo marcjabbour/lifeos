@@ -7,7 +7,7 @@
  */
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { registerServiceWorker } from '@/lib/pwa/register-sw'
+import { registerServiceWorker } from '@/lib/client/pwa/register-sw'
 
 interface ServiceWorkerContextValue {
   isRegistered: boolean

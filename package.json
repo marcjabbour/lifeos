@@ -32,6 +32,7 @@
   "homepage": "https://github.com/marcjabbour/lifeos#readme",
   "dependencies": {
     "@supabase/supabase-js": "^2.90.1",
+    "@tailwindcss/postcss": "^4.1.18",
     "crypto-js": "^4.2.0",
     "framer-motion": "^12.26.1",
     "inngest": "^3.27.0",

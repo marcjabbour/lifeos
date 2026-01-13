@@ -8,7 +8,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { User, Session } from '@supabase/supabase-js'
-import { supabase } from '@/lib/db/supabase'
+import { supabase } from '@/lib/core/database'
 
 export interface AuthState {
   user: User | null
