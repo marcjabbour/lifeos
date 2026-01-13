@@ -37,10 +37,27 @@ const nextConfig = {
 
   // Headers for caching and security
   async headers() {
+    const isDev = process.env.NODE_ENV === 'development';
+
+    // Content Security Policy - strict but functional
+    const cspDirectives = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // Next.js requires unsafe-inline/eval in dev
+      "style-src 'self' 'unsafe-inline'", // Tailwind uses inline styles
+      "img-src 'self' data: blob: https://images.unsplash.com https://*.supabase.co https://www.google.com",
+      "font-src 'self' data:",
+      "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.openai.com https://api.anthropic.com",
+      "frame-ancestors 'none'",
+      "form-action 'self'",
+      "base-uri 'self'",
+      "upgrade-insecure-requests",
+    ];
+
     return [
       {
         source: '/:path*',
         headers: [
+          // Security headers
           {
             key: 'X-DNS-Prefetch-Control',
             value: 'on',
@@ -60,6 +77,21 @@ const nextConfig = {
           {
             key: 'Referrer-Policy',
             value: 'strict-origin-when-cross-origin',
+          },
+          // HSTS - enforce HTTPS (only in production)
+          ...(!isDev ? [{
+            key: 'Strict-Transport-Security',
+            value: 'max-age=31536000; includeSubDomains; preload',
+          }] : []),
+          // Content Security Policy
+          {
+            key: 'Content-Security-Policy',
+            value: cspDirectives.join('; '),
+          },
+          // Permissions Policy - restrict browser features
+          {
+            key: 'Permissions-Policy',
+            value: 'camera=(), microphone=(), geolocation=(), payment=()',
           },
         ],
       },
