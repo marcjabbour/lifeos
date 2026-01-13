@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, HTMLAttributes, ReactNode } from "react";
+import Image from "next/image";
 
 export interface CardProps extends HTMLAttributes<HTMLDivElement> {
   variant?: "default" | "hero" | "split" | "memory" | "article";
@@ -66,7 +67,15 @@ export function CardThumbnail({
 }: CardThumbnailProps) {
   return (
     <div className={`relative ${className}`} style={{ height }} {...props}>
-      <img src={src} alt={alt} className="h-full w-full object-cover" />
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        className="object-cover"
+        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+        loading="lazy"
+        unoptimized={src.startsWith("http")} // Skip optimization for external URLs
+      />
       {overlay && (
         <div
           className="pointer-events-none absolute inset-0"
@@ -122,10 +131,13 @@ export function CardSource({ iconUrl, name }: CardSourceProps) {
   return (
     <span className="flex items-center gap-2">
       {iconUrl && (
-        <img
+        <Image
           src={iconUrl}
           alt={name}
-          className="h-[18px] w-[18px] rounded-sm"
+          width={18}
+          height={18}
+          className="rounded-sm"
+          unoptimized // Favicons are already small
         />
       )}
       {name}
@@ -199,18 +211,20 @@ export interface CardImageProps extends HTMLAttributes<HTMLImageElement> {
   alt: string;
 }
 
-export function CardImage({
-  src,
-  alt,
-  className = "",
-  ...props
-}: CardImageProps) {
+export function CardImage({ src, alt, className = "" }: CardImageProps) {
   return (
-    <img
-      src={src}
-      alt={alt}
-      className={`h-[180px] w-full flex-shrink-0 object-cover md:h-full md:w-[200px] ${className}`}
-      {...props}
-    />
+    <div
+      className={`relative h-[180px] w-full flex-shrink-0 md:h-full md:w-[200px] ${className}`}
+    >
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        className="object-cover"
+        sizes="(max-width: 768px) 100vw, 200px"
+        loading="lazy"
+        unoptimized={src.startsWith("http")}
+      />
+    </div>
   );
 }
