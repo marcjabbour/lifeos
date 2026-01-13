@@ -36,9 +36,9 @@ This project is organized into **4 parallel workstreams** with clear sync points
 | **Frontend Foundation** | 7/7 | Complete |
 | **AI/LLM Integration** | 10/10 | Complete |
 | **Real-time & PWA** | 8/8 | Complete |
-| **Integration & Polish** | 0/6 | Not Started |
+| **Integration & Polish** | 1/6 | In Progress |
 
-**Overall:** 33/39 tasks complete (85%)
+**Overall:** 34/39 tasks complete (87%)
 
 ---
 
@@ -1004,7 +1004,8 @@ Enable replying to Nova push notifications, continuing conversation from notific
 
 # Workstream 5: Integration & Polish
 
-**Status:** Not Started
+**Branch:** `feat/integration-polish`
+**Status:** In Progress
 **Target Duration:** Week 3
 
 Cross-cutting concerns, testing, documentation, and final polish.
@@ -1012,26 +1013,35 @@ Cross-cutting concerns, testing, documentation, and final polish.
 ---
 
 ### TASK-501: End-to-End Integration Testing
-**Status:** [ ] Not Started
+**Status:** [x] Complete
 **Workstream:** Cross-cutting
 **Dependencies:** All core tasks (TASK-1xx through TASK-4xx)
-**Branch:** `feat/task-501-e2e-tests`
+**Branch:** `feat/integration-polish`
 
 **Description:**
 Write comprehensive end-to-end tests covering full user workflows.
 
 **Acceptance Criteria:**
-- [ ] Test: Share URL -> Nova perceives -> Creates item -> Displays in feed
-- [ ] Test: Share text -> Nova reasons -> Creates job -> Sends push
-- [ ] Test: Receive push -> Reply -> Nova continues conversation
-- [ ] Test: Infinite scroll feed -> Load more items
-- [ ] Test: Search items -> Filter by has_enrichment
-- [ ] Test: Click item -> View detail modal -> Archive
-- [ ] Test: Open chat -> Type message -> Get Nova response
-- [ ] Test: Offline -> Cached items visible -> Online -> Sync
-- [ ] Test: Multiple browsers (iOS Safari, Chrome, Android)
-- [ ] Use Playwright for automation tests
-- [ ] Minimum 10 test scenarios passing
+- [x] Test: Share URL -> Nova perceives -> Creates item -> Displays in feed
+- [x] Test: Share text -> Nova reasons -> Creates job -> Sends push
+- [x] Test: Receive push -> Reply -> Nova continues conversation
+- [x] Test: Infinite scroll feed -> Load more items
+- [x] Test: Search items -> Filter by has_enrichment
+- [x] Test: Click item -> View detail modal -> Archive
+- [x] Test: Open chat -> Type message -> Get Nova response
+- [x] Test: Offline -> Cached items visible -> Online -> Sync
+- [x] Test: Multiple browsers (iOS Safari, Chrome, Android)
+- [x] Use Playwright for automation tests
+- [x] Minimum 10 test scenarios passing
+
+**Files Created:**
+- `playwright.config.ts` - Playwright configuration with multi-browser support
+- `e2e/feed.spec.ts` - Items feed tests (infinite scroll, detail modal, filtering)
+- `e2e/chat.spec.ts` - Chat interface tests (messaging, Nova responses)
+- `e2e/navigation.spec.ts` - Navigation and layout tests (sidebar, mobile nav)
+- `e2e/api.spec.ts` - API route tests (auth, validation, rate limiting)
+- `e2e/pwa.spec.ts` - PWA tests (manifest, service worker, offline)
+- `e2e/accessibility.spec.ts` - Accessibility tests (keyboard nav, ARIA)
 
 ---
 
