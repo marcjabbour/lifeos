@@ -8,7 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createHash } from 'crypto'
-import { getServiceClient, getAuthenticatedClient } from '@/lib/db/supabase'
+import { getServiceClient, getAuthenticatedClient } from '@/lib/core/database'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export interface AuthContext {
