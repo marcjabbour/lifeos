@@ -7,55 +7,57 @@
  * - Built-in observability
  */
 
-import { Inngest } from 'inngest'
+import { Inngest } from "inngest";
 
 // Create Inngest client
 export const inngest = new Inngest({
-  id: 'lifeos',
-  // Event signing key for production
+  id: "lifeos",
+  // Event key for sending events
+  eventKey: process.env.INNGEST_EVENT_KEY,
+  // Signing key for production (verifying webhooks)
   ...(process.env.INNGEST_SIGNING_KEY && {
     signingKey: process.env.INNGEST_SIGNING_KEY,
   }),
-})
+});
 
 // Event types for type safety
 export interface JobCreatedEvent {
-  name: 'lifeos/job.created'
+  name: "lifeos/job.created";
   data: {
-    job_id: string
-    user_id: string
-    item_id: string
-    content_type: 'url' | 'text' | 'image'
-  }
+    job_id: string;
+    user_id: string;
+    item_id: string;
+    content_type: "url" | "text" | "image";
+  };
 }
 
 export interface JobStepCompletedEvent {
-  name: 'lifeos/job.step.completed'
+  name: "lifeos/job.step.completed";
   data: {
-    job_id: string
-    step: number
-    action: string
-    result: unknown
-  }
+    job_id: string;
+    step: number;
+    action: string;
+    result: unknown;
+  };
 }
 
 export interface JobCompletedEvent {
-  name: 'lifeos/job.completed'
+  name: "lifeos/job.completed";
   data: {
-    job_id: string
-    user_id: string
-    item_id: string
-    result: unknown
-  }
+    job_id: string;
+    user_id: string;
+    item_id: string;
+    result: unknown;
+  };
 }
 
 export interface JobFailedEvent {
-  name: 'lifeos/job.failed'
+  name: "lifeos/job.failed";
   data: {
-    job_id: string
-    user_id: string
-    error: string
-  }
+    job_id: string;
+    user_id: string;
+    error: string;
+  };
 }
 
 // Union type for all events
@@ -63,4 +65,4 @@ export type LifeOSEvent =
   | JobCreatedEvent
   | JobStepCompletedEvent
   | JobCompletedEvent
-  | JobFailedEvent
+  | JobFailedEvent;

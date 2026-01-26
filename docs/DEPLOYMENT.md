@@ -27,6 +27,16 @@ This guide covers deploying LifeOS to production.
 | `INNGEST_EVENT_KEY` | Inngest event key | Inngest Dashboard |
 | `INNGEST_SIGNING_KEY` | Inngest signing key | Inngest Dashboard |
 
+### Optional: WhatsApp Integration
+
+| Variable | Description | Where to get it |
+|----------|-------------|-----------------|
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID | [Twilio Console](https://console.twilio.com/) |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token | [Twilio Console](https://console.twilio.com/) |
+| `TWILIO_WHATSAPP_NUMBER` | WhatsApp sender number | Twilio WhatsApp Senders (format: `whatsapp:+1234567890`) |
+
+See [WHATSAPP_INTEGRATION.md](./WHATSAPP_INTEGRATION.md) for full setup instructions.
+
 ### Generating VAPID Keys
 
 ```bash
@@ -110,22 +120,79 @@ Ensure Row Level Security is enabled and policies are set for all tables.
 
 ## Inngest Setup
 
-### 1. Create Inngest Account
+Inngest handles background job processing for content extraction and AI processing.
 
-1. Go to [inngest.com](https://inngest.com)
-2. Create a new app
-3. Copy your event key and signing key
+### Environment Variables
 
-### 2. Deploy Inngest Functions
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `INNGEST_EVENT_KEY` | Yes | API key for sending events to Inngest |
+| `INNGEST_SIGNING_KEY` | Production only | Webhook signature verification |
+
+### Local Development
+
+For local development, you have two options:
+
+**Option A: Use Inngest Dev Server (Recommended)**
+
+No API keys required. Run the local dev server:
+
+```bash
+npx inngest-cli@latest dev
+```
+
+This starts a local Inngest dashboard at `http://localhost:8288`. Your app will automatically connect to it when running locally.
+
+**Option B: Use Inngest Cloud**
+
+1. Go to [app.inngest.com](https://app.inngest.com)
+2. Create an account and app
+3. Go to **Settings** > **Keys**
+4. Copy your **Event Key** (for development environment)
+5. Add to `.env.local`:
+   ```
+   INNGEST_EVENT_KEY=your_event_key_here
+   ```
+
+### Production Deployment
+
+1. **Create Inngest Account**
+   - Go to [app.inngest.com](https://app.inngest.com)
+   - Create a new app (or use existing)
+
+2. **Get Production Keys**
+   - Go to **Settings** > **Keys**
+   - Copy your **Event Key** (production environment)
+   - Copy your **Signing Key** (for webhook verification)
+
+3. **Set Environment Variables in Vercel**
+   ```
+   INNGEST_EVENT_KEY=<production-event-key>
+   INNGEST_SIGNING_KEY=<production-signing-key>
+   ```
+
+4. **Configure Webhook URL**
+   - In Inngest Dashboard, add your app URL
+   - Webhook endpoint: `https://yourdomain.com/api/inngest`
+
+### Verify Functions
 
 Inngest functions are automatically deployed when you deploy to Vercel.
 The webhook endpoint is `/api/inngest`.
 
-### 3. Verify Functions
-
 In Inngest Dashboard, verify your functions are registered:
-- `nova/process-item` - Content processing
-- `nova/send-notification` - Push notifications
+- `lifeos/job.created` - Content processing trigger
+- `lifeos/job.failed` - Job failure handler
+
+## WhatsApp Integration (Production)
+
+To enable WhatsApp messaging in production:
+
+1. **Get a WhatsApp Business Number** from Twilio (requires approval)
+2. **Set environment variables** (`TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER`)
+3. **Configure webhook URL** in Twilio to `https://yourdomain.com/api/whatsapp/webhook`
+
+See [WHATSAPP_INTEGRATION.md](./WHATSAPP_INTEGRATION.md) for detailed instructions.
 
 ## Post-Deployment Checklist
 
@@ -137,6 +204,7 @@ In Inngest Dashboard, verify your functions are registered:
 - [ ] Check Langfuse for observability data
 - [ ] Test PWA installation
 - [ ] Verify offline functionality
+- [ ] (Optional) Configure WhatsApp webhook URL in Twilio
 
 ## Monitoring
 
@@ -211,3 +279,14 @@ Token budgets are set in `lib/cost-control/index.ts`:
 1. Check webhook URL is accessible
 2. Verify signing key is correct
 3. Check Inngest dashboard for errors
+
+### Inngest "Event key not found" Error
+
+If you see `Inngest API Error: 401 Event key not found`:
+
+1. **Missing Event Key**: Ensure `INNGEST_EVENT_KEY` is set in your environment
+2. **Wrong Environment**: Make sure you're using the correct key for your environment (dev vs production)
+3. **Key Rotation**: If you rotated keys in Inngest dashboard, update your environment variables
+4. **Local Dev**: For local development, either:
+   - Run `npx inngest-cli@latest dev` (no key needed)
+   - Or add a valid event key from Inngest Cloud
