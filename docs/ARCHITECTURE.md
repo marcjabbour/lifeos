@@ -41,6 +41,11 @@ This document provides a comprehensive technical architecture for LifeOS, coveri
 │   │  iOS Share Sheet │    │   PWA Direct     │    │   Siri Shortcut  │              │
 │   │   (API Key Auth) │    │ (Session Auth)   │    │   (API Key Auth) │              │
 │   └────────┬─────────┘    └────────┬─────────┘    └────────┬─────────┘              │
+│            │                       │                       │                         │
+│   ┌────────┴─────────┐    ┌────────┴─────────┐                                      │
+│   │  WhatsApp Bot    │    │  MCP Server      │                                      │
+│   │   (Twilio)       │    │  (Claude Tools)  │                                      │
+│   └────────┬─────────┘    └────────┬─────────┘                                      │
 │            └───────────────────────┴───────────────────────┘                         │
 │                                    │                                                 │
 └────────────────────────────────────┼─────────────────────────────────────────────────┘
@@ -965,3 +970,35 @@ This architecture document captures the key design decisions for LifeOS:
 For detailed implementation, see:
 - [DESIGN.md](./DESIGN.md) - Full design document with code examples
 - [AI-ARCHITECTURE.md](./AI-ARCHITECTURE.md) - Deep dive on AI/LLM patterns
+- [FUTURE_FEATURES.md](./FUTURE_FEATURES.md) - Planned features including WhatsApp integration
+
+---
+
+## MCP Server Architecture
+
+LifeOS exposes its capabilities via an MCP (Model Context Protocol) server, enabling Claude and other AI agents to interact with user data.
+
+### Tool Categories
+
+| Category | Tools | Purpose |
+|----------|-------|---------|
+| **Ingestion** | `lifeos_ingest_content`, `lifeos_ingest_image` | Save content from external sources |
+| **Query** | `lifeos_query_search`, `lifeos_query_recent`, `lifeos_query_ask_nova` | Search and retrieve items |
+| **UI Control** | `lifeos_ui_apply_filter`, `lifeos_ui_clear_filters` | Control the web UI remotely |
+
+### WhatsApp Integration Flow
+
+```
+WhatsApp User ──▶ Twilio Webhook ──▶ LifeOS Server ──▶ Claude (MCP Tools) ──▶ Response
+      │                                    │
+      │                                    ├── lifeos_ingest_* (save content)
+      │                                    └── lifeos_query_* (search/query)
+      │
+      ◀────────────────────────────────────── Rich WhatsApp Response
+```
+
+### Authentication
+
+- **WhatsApp users** authenticate via phone number linking
+- **MCP server** uses API keys for LifeOS API access
+- **User context** is derived from the linked WhatsApp number

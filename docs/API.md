@@ -303,3 +303,172 @@ Use the HTTP Request action:
 2. Method: POST
 3. Headers: `Authorization: Bearer <api_key>`
 4. Request Body: JSON with content and content_type
+
+---
+
+## Nova Commands
+
+### POST /api/nova/command
+
+Process a natural language command from the Nova UI.
+
+**Request Body:**
+```json
+{
+  "command": "Show me all food items",
+  "mode": "auto"
+}
+```
+
+**Mode Options:**
+- `auto` - Nova decides if this is a filter or query (default)
+- `filter` - Force filter mode
+- `query` - Force query mode
+
+**Filter Response:**
+```json
+{
+  "type": "filter",
+  "filter": {
+    "categories": ["food"],
+    "searchQuery": null
+  },
+  "message": "Got it! Filtering by food.",
+  "confidence": 0.92
+}
+```
+
+**Query Response:**
+```json
+{
+  "type": "query",
+  "answer": "You saved 'The Italian Place' yesterday...",
+  "items": [
+    {
+      "id": "uuid",
+      "title": "The Italian Place",
+      "url": "https://...",
+      "thumbnail_url": "https://...",
+      "category": "food"
+    }
+  ],
+  "message": "You saved 'The Italian Place' yesterday...",
+  "confidence": 0.88
+}
+```
+
+### POST /api/nova/voice-filter
+
+Parse a voice command into filter parameters.
+
+**Request Body:**
+```json
+{
+  "command": "show me tech and AI stuff"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "intent": {
+    "categories": ["tech"],
+    "searchQuery": "AI",
+    "action": "search",
+    "confidence": 0.85
+  }
+}
+```
+
+### GET /api/nova/voice-filter
+
+Get suggested voice commands.
+
+**Response:**
+```json
+{
+  "commands": [
+    "Show me all food items",
+    "Find tech and AI content",
+    "Search for restaurants",
+    "Clear filters"
+  ]
+}
+```
+
+---
+
+## Feed Filtering
+
+### GET /api/feed/filter
+
+Filter items by categories and search query.
+
+**Query Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `categories` | string | Comma-separated category names |
+| `q` | string | Search query |
+| `cursor` | string | Pagination cursor |
+| `limit` | number | Items per page (default: 20) |
+
+**Response:**
+```json
+{
+  "items": [...],
+  "next_cursor": "cursor_string",
+  "has_more": true,
+  "total_count": 42
+}
+```
+
+### POST /api/feed/seen
+
+Mark an item as seen.
+
+**Request Body:**
+```json
+{
+  "item_id": "uuid"
+}
+```
+
+### DELETE /api/feed/seen
+
+Unmark an item as seen.
+
+**Request Body:**
+```json
+{
+  "item_id": "uuid"
+}
+```
+
+---
+
+## WhatsApp Integration (Coming Soon)
+
+### POST /api/whatsapp/webhook
+
+Twilio webhook endpoint for incoming WhatsApp messages. Not for direct use.
+
+### POST /api/whatsapp/link
+
+Link a WhatsApp phone number to a LifeOS account.
+
+**Request Body:**
+```json
+{
+  "code": "123456"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "phone_number": "+1234567890",
+  "message": "Phone number linked successfully"
+}
+```

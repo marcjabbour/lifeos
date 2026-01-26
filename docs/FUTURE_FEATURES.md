@@ -129,6 +129,139 @@ When viewing an entity:
 
 ---
 
+---
+
+## WhatsApp Integration via MCP Server
+
+**Status:** In Progress
+**Priority:** High
+**Category:** Integration
+
+### Overview
+
+Enable LifeOS interaction through WhatsApp, allowing users to:
+1. Share content (links, screenshots, text) to LifeOS by messaging a WhatsApp bot
+2. Query saved items ("What was the movie I recently saved?")
+3. Receive rich responses with thumbnails, links, and formatted lists
+
+### Architecture: MCP Server
+
+A single MCP (Model Context Protocol) server exposes LifeOS capabilities as tools that Claude can invoke:
+
+```
+┌─────────────────────────────────────────────────────┐
+│              LifeOS MCP Server                      │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐       │
+│  │ Ingestion │  │   Query   │  │    UI     │       │
+│  │   Tools   │  │   Tools   │  │  Control  │       │
+│  └───────────┘  └───────────┘  └───────────┘       │
+│                      │                              │
+│              ┌───────┴───────┐                      │
+│              │ LifeOS API    │                      │
+│              │   Adapter     │                      │
+│              └───────────────┘                      │
+└─────────────────────────────────────────────────────┘
+```
+
+### MCP Tools
+
+| Tool | Purpose |
+|------|---------|
+| `lifeos_ingest_content` | Save URLs, text, notes |
+| `lifeos_ingest_image` | Save screenshots/photos with OCR |
+| `lifeos_query_search` | Semantic + text search |
+| `lifeos_query_recent` | Get recently saved items |
+| `lifeos_query_ask_nova` | Complex questions requiring reasoning |
+| `lifeos_query_categories` | List categories with counts |
+| `lifeos_ui_apply_filter` | Apply filter to Intelligence Feed |
+| `lifeos_ui_clear_filters` | Clear all active filters |
+
+### WhatsApp Provider: Twilio
+
+Using Twilio WhatsApp API for:
+- Simple webhook integration
+- Built-in signature validation
+- Easy media handling (for screenshots)
+- Sandbox for development
+
+### User Flow
+
+1. **Link Phone Number**: User generates a code in LifeOS settings, sends to WhatsApp bot
+2. **Share Content**: Send a link, screenshot, or text to the bot
+3. **Query Items**: Ask questions like "Show me my Italian restaurants"
+4. **Receive Responses**: Rich formatted messages with thumbnails and links
+
+### Database Changes
+
+New tables:
+- `whatsapp_users` - Links phone numbers to LifeOS accounts
+- `whatsapp_messages` - Message log for debugging and context
+
+### Files to Create
+
+```
+mcp-server/
+├── src/
+│   ├── index.ts
+│   ├── tools/ingestion.ts
+│   ├── tools/query.ts
+│   ├── tools/ui-control.ts
+│   └── adapters/lifeos-api.ts
+
+src/app/api/whatsapp/
+├── webhook/route.ts
+└── link/route.ts
+
+lib/services/whatsapp/
+├── twilio-client.ts
+├── message-parser.ts
+└── response-formatter.ts
+```
+
+---
+
+## Nova UI Command Integration
+
+**Status:** In Progress
+**Priority:** High
+**Category:** Core Feature
+
+### Overview
+
+Enable natural language commands in the "Ask Nova anything about your life" input that can:
+1. **Filter the feed**: "Show me all Italian restaurants I saved"
+2. **Query conversationally**: "What was the last movie I saved?"
+
+### Implementation
+
+**Nova Command Endpoint** (`POST /api/nova/command`):
+- Accepts natural language command
+- Parses intent using existing `parseFilterIntent()`
+- Returns either:
+  - Filter response: UI applies filters automatically
+  - Query response: Conversational answer with item details
+
+**FilterContext Provider**:
+- React context managing filter state
+- `submitCommand(command)` method for Nova integration
+- Automatically syncs filter changes to ItemsFeed
+
+### User Flow
+
+1. User types "Show me food items" in CommandInput
+2. Nova parses intent → filter action
+3. FilterContext updates → ItemsFeed re-renders with filtered items
+4. Nova responds: "Got it! Showing food items."
+
+Or:
+
+1. User types "What movie did I save last week?"
+2. Nova parses intent → query action
+3. Nova searches items, generates conversational response
+4. User sees: "You saved 'Interstellar' on January 20th..."
+
+---
+
 ## Other Planned Features
 
 *Additional features will be documented here as they are defined.*
