@@ -57,6 +57,20 @@ export const processContentJob = inngest.createFunction(
       event.data as JobCreatedEvent["data"];
     const supabase = getServiceClient();
 
+    // Check if this item was already enriched (from WhatsApp unified processing)
+    const jobData = await step.run("check-skip-enrichment", async () => {
+      const { data: job } = await supabase
+        .from("jobs")
+        .select("result")
+        .eq("id", job_id)
+        .single();
+      return job;
+    });
+
+    const skipEnrichment =
+      (jobData?.result as { skip_enrichment?: boolean })?.skip_enrichment ===
+      true;
+
     // Step 1: Update job status to running
     await step.run("update-job-running", async () => {
       await supabase
@@ -83,22 +97,204 @@ export const processContentJob = inngest.createFunction(
       return data;
     });
 
+    // FAST PATH: If enrichment was already done (from WhatsApp unified processing),
+    // skip straight to embedding generation
+    if (skipEnrichment) {
+      console.log(
+        `[Job ${job_id}] Skipping enrichment - item already enriched`,
+      );
+
+      // Generate embeddings for the pre-enriched item
+      const embeddingResult = await step.run(
+        "generate-embedding-fast",
+        async () => {
+          try {
+            const embeddableContent = extractEmbeddableContent("item", {
+              title: item.title || "",
+              description:
+                item.content ||
+                (item.enrichment as { summary?: string })?.summary ||
+                "",
+              extractedText: item.content,
+            });
+
+            if (!embeddableContent || embeddableContent.trim().length < 10) {
+              return {
+                embedding_generated: false,
+                reason: "Content too short for embedding",
+              };
+            }
+
+            const embeddings = await generateEmbedding({
+              content: embeddableContent,
+              sourceType: "item",
+              sourceId: item_id,
+              userId: user_id,
+              metadata: {
+                title: item.title,
+                contentType: content_type,
+                category: item.category,
+              },
+            });
+
+            if (embeddings.length > 0) {
+              const embeddingRecords = embeddings.map((emb) => ({
+                user_id: user_id,
+                source_type: emb.sourceType,
+                source_id: emb.sourceId,
+                content: emb.content,
+                content_hash: emb.contentHash,
+                embedding: emb.embedding,
+                metadata: emb.metadata,
+                chunk_index: emb.chunkIndex,
+                total_chunks: emb.totalChunks,
+              }));
+
+              const { error } = await supabase
+                .from("embeddings")
+                .upsert(embeddingRecords, {
+                  onConflict: "content_hash",
+                  ignoreDuplicates: true,
+                });
+
+              if (error) {
+                console.error("Failed to store embeddings:", error);
+                return {
+                  embedding_generated: true,
+                  stored: false,
+                  error: error.message,
+                };
+              }
+
+              return {
+                embedding_generated: true,
+                stored: true,
+                count: embeddings.length,
+              };
+            }
+
+            return {
+              embedding_generated: false,
+              reason: "No embeddings generated",
+            };
+          } catch (error) {
+            console.error("Embedding generation failed:", error);
+            return {
+              embedding_generated: false,
+              reason:
+                error instanceof Error
+                  ? error.message
+                  : "Embedding generation failed",
+            };
+          }
+        },
+      );
+
+      // Complete job
+      await step.run("complete-job-fast", async () => {
+        await supabase
+          .from("jobs")
+          .update({
+            status: "completed",
+            result: {
+              skip_enrichment: true,
+              embedding: embeddingResult,
+              completed_at: new Date().toISOString(),
+            },
+            completed_at: new Date().toISOString(),
+            current_step: 2,
+            step_results: [
+              {
+                step: 1,
+                action: "skip_enrichment",
+                status: "skipped",
+                reason: "Item pre-enriched",
+              },
+              {
+                step: 2,
+                action: "generate_embedding",
+                status: embeddingResult.embedding_generated
+                  ? "completed"
+                  : "skipped",
+              },
+            ],
+          })
+          .eq("id", job_id);
+      });
+
+      return {
+        job_id,
+        item_id,
+        status: "completed",
+        fast_path: true,
+        embedding: embeddingResult,
+      };
+    }
+
+    // STANDARD PATH: Full enrichment pipeline for items that need it
+
+    // Step 2.5: Analyze image content if this is an image
+    const imageAnalysis = await step.run("analyze-image", async () => {
+      if (content_type !== "image") {
+        return null;
+      }
+
+      const imageUrl = item.url;
+      if (!imageUrl) {
+        return null;
+      }
+
+      try {
+        const analysis = await analyzeImage(imageUrl, user_id);
+        if (analysis) {
+          console.log(
+            `[ImageAnalysis] Analyzed image: ${analysis.description?.slice(0, 100)}...`,
+          );
+        }
+        return analysis;
+      } catch (error) {
+        console.error("[ImageAnalysis] Failed:", error);
+        return null;
+      }
+    });
+
     // Step 3: Process content with Nova AI perception
     const perception = await step.run("perceive-content", async () => {
       const startTime = Date.now();
 
       try {
+        // For images, use the image analysis as content for perception
+        let contentForPerception = item.content || item.url || "";
+        let contextForPerception = item.title
+          ? `Title: ${item.title}`
+          : undefined;
+
+        if (content_type === "image" && imageAnalysis) {
+          // Use the image analysis as the content to perceive
+          contentForPerception = imageAnalysis.description || "";
+          contextForPerception = `This is an image analysis. Caption: ${item.metadata?.caption || "None"}. OCR Text: ${imageAnalysis.extractedText || "None"}`;
+        }
+
         // Call the actual Nova perception engine
         const perceptionResult = await perceive({
-          content: item.content || item.url || "",
-          contentType: content_type as ContentType,
-          context: item.title ? `Title: ${item.title}` : undefined,
+          content: contentForPerception,
+          contentType:
+            content_type === "image" ? "text" : (content_type as ContentType),
+          context: contextForPerception,
           userId: user_id,
           itemId: item_id,
         });
 
         const result: PerceiveOutput = perceptionResult.result;
         const duration_ms = Date.now() - startTime;
+
+        // If we have image analysis, merge its data into the perception result
+        if (imageAnalysis) {
+          result.title = imageAnalysis.title || result.title;
+          if (imageAnalysis.topics) {
+            result.topics = [...(result.topics || []), ...imageAnalysis.topics];
+          }
+        }
 
         // Record step result
         await supabase
@@ -128,13 +324,17 @@ export const processContentJob = inngest.createFunction(
         console.error("Perception failed:", error);
         // Return a basic fallback if AI fails
         return {
-          summary: item.title || `${content_type} content`,
+          summary:
+            imageAnalysis?.description ||
+            item.title ||
+            `${content_type} content`,
           contentType: content_type,
           confidence: 0.5,
           suggestedActions: ["save"],
           entities: [],
           topics: [],
           metadata: {},
+          title: imageAnalysis?.title,
         } as PerceiveOutput;
       }
     });
@@ -291,7 +491,49 @@ export const processContentJob = inngest.createFunction(
       };
     }
 
-    // Step 4: Generate enrichment from perception
+    // Step 4: Web search enrichment (for places, restaurants, etc.)
+    const webEnrichment = await step.run("web-search-enrichment", async () => {
+      // Only do web search for certain content types that benefit from it
+      const searchableTypes = [
+        "restaurant",
+        "place",
+        "product",
+        "book",
+        "movie",
+      ];
+      const detectedType = (
+        perception.contentType || content_type
+      ).toLowerCase();
+
+      if (
+        !searchableTypes.includes(detectedType) ||
+        !perception.suggestedActions?.includes("web_search")
+      ) {
+        return null;
+      }
+
+      try {
+        // Use the original content or perception title for search
+        const searchQuery =
+          perception.title || item.content || item.title || "";
+        if (!searchQuery || searchQuery.length < 3) {
+          return null;
+        }
+
+        // Call web search via OpenAI with web browsing or use a search API
+        const searchResult = await performWebSearch(
+          searchQuery,
+          detectedType,
+          user_id,
+        );
+        return searchResult;
+      } catch (error) {
+        console.error("Web search enrichment failed:", error);
+        return null;
+      }
+    });
+
+    // Step 5: Generate enrichment from perception + web search
     const enrichment = await step.run("generate-enrichment", async () => {
       const result: ItemEnrichment = {
         summary: perception.summary || item.title || "No summary available",
@@ -307,10 +549,29 @@ export const processContentJob = inngest.createFunction(
         source: perception.source,
       };
 
+      // Merge web enrichment if available
+      if (webEnrichment) {
+        result.summary = webEnrichment.description || result.summary;
+        result.key_insights = [
+          ...result.key_insights,
+          ...(webEnrichment.details || []),
+        ];
+        if (webEnrichment.address) {
+          result.key_insights.push(`Address: ${webEnrichment.address}`);
+        }
+        if (webEnrichment.website) {
+          result.key_insights.push(`Website: ${webEnrichment.website}`);
+        }
+        // Store web enrichment data
+        (
+          result as ItemEnrichment & { web_enrichment?: WebEnrichmentResult }
+        ).web_enrichment = webEnrichment;
+      }
+
       return result;
     });
 
-    // Step 5: Update item with enrichment
+    // Step 6: Update item with enrichment
     await step.run("update-item-enrichment", async () => {
       // Also update category if we have a good confidence and detected type
       const updates: Record<string, unknown> = {
@@ -318,6 +579,31 @@ export const processContentJob = inngest.createFunction(
         has_enrichment: true,
         updated_at: new Date().toISOString(),
       };
+
+      // Update title from perception if we have a better one
+      // Only update if perception provided a title and confidence is decent
+      if (
+        enrichment.title &&
+        perception.confidence &&
+        perception.confidence > 0.6
+      ) {
+        // Don't overwrite if the current title looks intentional (not auto-generated)
+        const isAutoGeneratedTitle =
+          item.title === item.content?.slice(0, 50) ||
+          item.title?.startsWith("Screenshot from") ||
+          item.title === "Shared URL" ||
+          item.title === "Shared Image" ||
+          item.title === "Shared Content";
+
+        if (isAutoGeneratedTitle || !item.title) {
+          updates.title = enrichment.title;
+        }
+      }
+
+      // Also update description from web enrichment if available
+      if (webEnrichment?.description) {
+        updates.content = webEnrichment.description;
+      }
 
       // Auto-categorize based on content type detection
       if (perception.confidence && perception.confidence > 0.7) {
@@ -575,6 +861,239 @@ function generateDefaultInterpretations(
   }
 
   return interpretations;
+}
+
+/**
+ * Web enrichment result from search
+ */
+interface WebEnrichmentResult {
+  name?: string;
+  description?: string;
+  address?: string;
+  website?: string;
+  phone?: string;
+  rating?: number;
+  priceRange?: string;
+  cuisine?: string;
+  details?: string[];
+  source?: string;
+}
+
+/**
+ * Perform web search to get additional info about content
+ */
+async function performWebSearch(
+  query: string,
+  contentType: string,
+  userId?: string,
+): Promise<WebEnrichmentResult | null> {
+  try {
+    const OpenAI = (await import("openai")).default;
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    // Build a search-optimized prompt based on content type
+    let searchPrompt: string;
+    switch (contentType) {
+      case "restaurant":
+        searchPrompt = `Search for information about the restaurant "${query}".
+Return a JSON object with:
+{
+  "name": "Official restaurant name",
+  "description": "Brief description of the restaurant, cuisine type, atmosphere",
+  "address": "Full address if found",
+  "website": "Official website URL",
+  "phone": "Phone number",
+  "rating": "Average rating if available (number)",
+  "priceRange": "$ to $$$$ or similar",
+  "cuisine": "Type of cuisine",
+  "details": ["Notable dishes", "Opening hours", "Reservations info", "etc"]
+}
+Only include fields you can find reliable information for.`;
+        break;
+      case "place":
+        searchPrompt = `Search for information about "${query}" as a place/location.
+Return a JSON object with:
+{
+  "name": "Official name",
+  "description": "What this place is and why people visit",
+  "address": "Full address",
+  "website": "Official website URL",
+  "details": ["Key attractions", "Hours", "Tips", "etc"]
+}`;
+        break;
+      case "book":
+        searchPrompt = `Search for information about the book "${query}".
+Return a JSON object with:
+{
+  "name": "Full book title",
+  "description": "Synopsis/summary without spoilers",
+  "details": ["Author", "Publication year", "Genre", "Page count", "Awards if any"]
+}`;
+        break;
+      case "movie":
+        searchPrompt = `Search for information about the movie "${query}".
+Return a JSON object with:
+{
+  "name": "Full movie title",
+  "description": "Plot synopsis without major spoilers",
+  "rating": "IMDB or Rotten Tomatoes rating",
+  "details": ["Director", "Main cast", "Release year", "Runtime", "Genre"]
+}`;
+        break;
+      case "product":
+        searchPrompt = `Search for information about "${query}" as a product or brand.
+Return a JSON object with:
+{
+  "name": "Official product/brand name",
+  "description": "What it is and key features",
+  "website": "Official website",
+  "priceRange": "Approximate price range if applicable",
+  "details": ["Key features", "Pros", "Common uses"]
+}`;
+        break;
+      default:
+        return null;
+    }
+
+    // Use GPT-4o with web search capability via function calling
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 1000,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `You are a helpful assistant that searches for information and returns structured JSON data.
+Be accurate and only include information you're confident about.
+If you can't find reliable information, return an empty object {}.
+Use your knowledge to provide useful, accurate information.`,
+        },
+        {
+          role: "user",
+          content: searchPrompt,
+        },
+      ],
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return null;
+    }
+
+    const result = JSON.parse(content) as WebEnrichmentResult;
+
+    // Add source attribution
+    result.source = "AI knowledge";
+
+    console.log(`[WebSearch] Enriched "${query}" with:`, result);
+    return result;
+  } catch (error) {
+    console.error("[WebSearch] Failed:", error);
+    return null;
+  }
+}
+
+/**
+ * Image analysis result
+ */
+interface ImageAnalysisResult {
+  title?: string;
+  description: string;
+  extractedText?: string;
+  topics?: string[];
+  contentType?: string;
+  entities?: string[];
+}
+
+/**
+ * Analyze an image using GPT-4o Vision
+ */
+async function analyzeImage(
+  imageUrl: string,
+  userId?: string,
+): Promise<ImageAnalysisResult | null> {
+  try {
+    const OpenAI = (await import("openai")).default;
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    console.log(
+      `[ImageAnalysis] Analyzing image from: ${imageUrl.slice(0, 50)}...`,
+    );
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 1000,
+      messages: [
+        {
+          role: "system",
+          content: `You are an image analysis assistant. Analyze the image and extract useful information.
+
+Return a JSON object with:
+{
+  "title": "A short, descriptive title for this image (e.g., 'Restaurant Menu - Italian Cuisine' or 'Screenshot of Concert Tickets')",
+  "description": "A detailed description of what's in the image and why someone might have saved it",
+  "extractedText": "Any text visible in the image (OCR). Include all readable text.",
+  "topics": ["relevant", "topics", "for", "categorization"],
+  "contentType": "screenshot" | "photo" | "document" | "menu" | "receipt" | "ticket" | "map" | "product" | "meme" | "other",
+  "entities": ["Named entities mentioned or shown", "Restaurant names", "Product names", "etc"]
+}
+
+Be specific and helpful. If this looks like a screenshot of something the user wants to remember (restaurant, event, product, etc.), extract all relevant details.`,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Please analyze this image and extract all useful information:",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: imageUrl,
+                detail: "high",
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      console.error("[ImageAnalysis] No content in response");
+      return null;
+    }
+
+    // Parse the JSON response
+    try {
+      // Handle cases where the response might have markdown code blocks
+      let jsonContent = content;
+      if (content.includes("```json")) {
+        jsonContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "");
+      } else if (content.includes("```")) {
+        jsonContent = content.replace(/```\n?/g, "");
+      }
+
+      const result = JSON.parse(jsonContent.trim()) as ImageAnalysisResult;
+      console.log(`[ImageAnalysis] Successfully analyzed: ${result.title}`);
+      return result;
+    } catch (parseError) {
+      console.error("[ImageAnalysis] Failed to parse response:", parseError);
+      // Return a basic result with the raw description
+      return {
+        description: content,
+        title: "Analyzed Image",
+      };
+    }
+  } catch (error) {
+    console.error("[ImageAnalysis] Failed:", error);
+    return null;
+  }
 }
 
 /**

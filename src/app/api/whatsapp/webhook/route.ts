@@ -22,7 +22,6 @@ import {
   isClarificationResponse,
   isDeleteConfirmationResponse,
   parseDeleteConfirmation,
-  formatSaveConfirmation,
   formatSearchResults,
   formatNovaAnswer,
   formatVerificationPrompt,
@@ -38,8 +37,9 @@ import {
   type FeedItemSummary,
 } from "@/lib/services/whatsapp";
 import { triggerContentProcessing } from "@/lib/services/jobs";
-import { generateTitle, createInitialMetadata } from "@/lib/services/items";
 import { parseFilterIntent } from "@/lib/services/ai/voice/filter-intent";
+import { perceive, type ContentType } from "@/lib/services/ai/nova/perception";
+import { enrichContent, formatEnrichedResponse } from "@/lib/services/search";
 
 // Twilio sends form-urlencoded data
 export const config = {
@@ -196,28 +196,37 @@ export async function POST(request: NextRequest) {
     try {
       switch (intent.type) {
         case "save_link":
-          responseText = await handleSaveLink(
+          responseText = await processAndCreateItem(
             supabase,
             whatsappUser.user_id,
-            intent.url,
-            intent.note,
+            {
+              type: "url",
+              url: intent.url,
+              text: intent.note,
+            },
           );
           break;
 
         case "save_image":
-          responseText = await handleSaveImage(
+          responseText = await processAndCreateItem(
             supabase,
             whatsappUser.user_id,
-            intent.mediaUrl,
-            intent.caption,
+            {
+              type: "image",
+              mediaUrl: intent.mediaUrl,
+              caption: intent.caption,
+            },
           );
           break;
 
         case "save_text":
-          responseText = await handleSaveText(
+          responseText = await processAndCreateItem(
             supabase,
             whatsappUser.user_id,
-            intent.text,
+            {
+              type: "text",
+              text: intent.text,
+            },
           );
           break;
 
@@ -305,33 +314,113 @@ async function handleUnknownUser(
 }
 
 /**
- * Save a URL/link to LifeOS
+ * Unified content processing and item creation
+ *
+ * NEW FLOW:
+ * 1. Extract content (for images: analyze with vision)
+ * 2. LLM perception (understand what the content is)
+ * 3. LLM-driven web search with Tavily
+ * 4. LLM synthesizes results into enriched data
+ * 5. Create item with full enrichment
+ * 6. Trigger job for embeddings only
+ * 7. Return LLM-formatted response
  */
-async function handleSaveLink(
+async function processAndCreateItem(
   supabase: ReturnType<typeof getServiceClient>,
   userId: string,
-  url: string,
-  note?: string,
+  content: {
+    type: "text" | "image" | "url";
+    text?: string;
+    mediaUrl?: string;
+    url?: string;
+    caption?: string;
+  },
 ): Promise<string> {
-  const title = generateTitle(url, "url");
-  const metadata = createInitialMetadata(url, "url", "whatsapp");
-  if (note) {
-    metadata.user_note = note;
+  console.log(`[WhatsApp] Processing ${content.type} content`);
+
+  // STEP 1: Extract content
+  let extractedContent = content.text || content.url || "";
+  let imageAnalysis: {
+    description?: string;
+    extractedText?: string;
+    title?: string;
+  } | null = null;
+
+  if (content.type === "image" && content.mediaUrl) {
+    // Analyze image with GPT-4o Vision
+    imageAnalysis = await analyzeImageContent(content.mediaUrl);
+    if (imageAnalysis) {
+      extractedContent = imageAnalysis.description || "";
+      if (imageAnalysis.extractedText) {
+        extractedContent += `\n\nText from image: ${imageAnalysis.extractedText}`;
+      }
+    }
+    console.log(
+      `[WhatsApp] Image analysis: ${imageAnalysis?.description?.slice(0, 100)}...`,
+    );
   }
 
+  // STEP 2: LLM Perception (understand what this is)
+  console.log(`[WhatsApp] Running perception on content`);
+  const perceptionResult = await perceive({
+    content: extractedContent,
+    contentType:
+      content.type === "image"
+        ? ("text" as ContentType)
+        : (content.type as ContentType),
+    context: content.caption || imageAnalysis?.title,
+    userId,
+  });
+  const perception = perceptionResult.result;
+  console.log(
+    `[WhatsApp] Perceived as: ${perception.contentType} (${perception.confidence})`,
+  );
+
+  // If we have image analysis, merge its title
+  if (imageAnalysis?.title) {
+    perception.title = imageAnalysis.title;
+  }
+
+  // STEP 3-4: LLM-driven web search + synthesis
+  console.log(`[WhatsApp] Enriching content with web search`);
+  const { enrichedData, searchPerformed, searchQuery } =
+    await enrichContent(perception);
+  console.log(
+    `[WhatsApp] Enrichment complete: ${enrichedData.title} (searched: ${searchPerformed})`,
+  );
+
+  // STEP 5: Create fully enriched item
   const { data: item, error } = await supabase
     .from("items")
     .insert({
       user_id: userId,
-      title,
-      url,
-      content_type: "url",
+      title: enrichedData.title,
+      content: enrichedData.description,
+      url: content.url || content.mediaUrl,
+      content_type: content.type,
       source_type: "whatsapp",
-      metadata,
-      category: "uncategorized",
-      tags: [],
-      enrichment: {},
-      has_enrichment: false,
+      category: enrichedData.category,
+      tags: enrichedData.tags,
+      enrichment: {
+        ...enrichedData.keyFacts,
+        summary: enrichedData.description,
+        source_url: enrichedData.sourceUrl,
+        confidence: enrichedData.confidence,
+        perception: {
+          contentType: perception.contentType,
+          summary: perception.summary,
+          confidence: perception.confidence,
+        },
+        search_query: searchQuery,
+        search_performed: searchPerformed,
+      },
+      has_enrichment: true,
+      metadata: {
+        original_content: content.text || content.caption,
+        image_analysis: imageAnalysis,
+        source: "whatsapp",
+        processed_at: new Date().toISOString(),
+      },
       is_archived: false,
       is_completed: false,
     })
@@ -339,10 +428,13 @@ async function handleSaveLink(
     .single();
 
   if (error) {
+    console.error(`[WhatsApp] Failed to create item:`, error);
     throw new Error(`Failed to save: ${error.message}`);
   }
 
-  // Create job for async processing
+  console.log(`[WhatsApp] Created item: ${item.id}`);
+
+  // STEP 6: Trigger job for embeddings only
   const { data: job } = await supabase
     .from("jobs")
     .insert({
@@ -350,15 +442,12 @@ async function handleSaveLink(
       item_id: item.id,
       status: "pending",
       plan: {
-        reasoning: "Process URL from WhatsApp",
-        steps: [
-          { action: "perceive", why: "Understand the content" },
-          { action: "enrich", why: "Add metadata and insights" },
-        ],
+        reasoning: "Generate embeddings for enriched WhatsApp item",
+        steps: [{ action: "embed", why: "Enable semantic search" }],
       },
       current_step: 0,
       step_results: [],
-      result: {},
+      result: { skip_enrichment: true },
     })
     .select()
     .single();
@@ -368,150 +457,85 @@ async function handleSaveLink(
       job_id: job.id,
       user_id: userId,
       item_id: item.id,
-      content_type: "url",
+      content_type: content.type,
     });
   }
 
-  return formatSaveConfirmation(title, undefined, job?.id);
+  // STEP 7: LLM formats response
+  const responseMessage = await formatEnrichedResponse(enrichedData);
+  return responseMessage;
 }
 
 /**
- * Save an image to LifeOS
+ * Analyze image content using GPT-4o Vision
  */
-async function handleSaveImage(
-  supabase: ReturnType<typeof getServiceClient>,
-  userId: string,
-  mediaUrl: string,
-  caption?: string,
-): Promise<string> {
-  const title = caption || "Screenshot from WhatsApp";
-  const metadata = createInitialMetadata(mediaUrl, "image", "whatsapp");
-  if (caption) {
-    metadata.caption = caption;
-  }
-
-  const { data: item, error } = await supabase
-    .from("items")
-    .insert({
-      user_id: userId,
-      title,
-      url: mediaUrl,
-      content_type: "image",
-      source_type: "whatsapp",
-      metadata,
-      category: "uncategorized",
-      tags: [],
-      enrichment: {},
-      has_enrichment: false,
-      is_archived: false,
-      is_completed: false,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to save: ${error.message}`);
-  }
-
-  // Create job for OCR and enrichment
-  const { data: job } = await supabase
-    .from("jobs")
-    .insert({
-      user_id: userId,
-      item_id: item.id,
-      status: "pending",
-      plan: {
-        reasoning: "Process image from WhatsApp with OCR",
-        steps: [
-          { action: "ocr", why: "Extract text from image" },
-          { action: "perceive", why: "Understand the content" },
-          { action: "enrich", why: "Add metadata and insights" },
-        ],
-      },
-      current_step: 0,
-      step_results: [],
-      result: {},
-    })
-    .select()
-    .single();
-
-  if (job) {
-    await triggerContentProcessing({
-      job_id: job.id,
-      user_id: userId,
-      item_id: item.id,
-      content_type: "image",
+async function analyzeImageContent(imageUrl: string): Promise<{
+  description?: string;
+  extractedText?: string;
+  title?: string;
+} | null> {
+  try {
+    const OpenAI = (await import("openai")).default;
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
     });
-  }
 
-  return formatSaveConfirmation(title, undefined, job?.id);
+    console.log(`[WhatsApp] Analyzing image: ${imageUrl.slice(0, 50)}...`);
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      max_tokens: 1000,
+      messages: [
+        {
+          role: "system",
+          content: `You are an image analysis assistant. Analyze the image and extract useful information.
+
+Return a JSON object with:
+{
+  "title": "A short, descriptive title for this image",
+  "description": "A detailed description of what's in the image and why someone might have saved it",
+  "extractedText": "Any text visible in the image (OCR). Include all readable text."
 }
 
-/**
- * Save text as a note to LifeOS
- */
-async function handleSaveText(
-  supabase: ReturnType<typeof getServiceClient>,
-  userId: string,
-  text: string,
-): Promise<string> {
-  const title = generateTitle(text, "text");
-  const metadata = createInitialMetadata(text, "text", "whatsapp");
-
-  const { data: item, error } = await supabase
-    .from("items")
-    .insert({
-      user_id: userId,
-      title,
-      content: text,
-      content_type: "text",
-      source_type: "whatsapp",
-      metadata,
-      category: "uncategorized",
-      tags: [],
-      enrichment: {},
-      has_enrichment: false,
-      is_archived: false,
-      is_completed: false,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to save: ${error.message}`);
-  }
-
-  // Create job for enrichment
-  const { data: job } = await supabase
-    .from("jobs")
-    .insert({
-      user_id: userId,
-      item_id: item.id,
-      status: "pending",
-      plan: {
-        reasoning: "Process text note from WhatsApp",
-        steps: [
-          { action: "perceive", why: "Understand the content" },
-          { action: "enrich", why: "Add metadata and insights" },
-        ],
-      },
-      current_step: 0,
-      step_results: [],
-      result: {},
-    })
-    .select()
-    .single();
-
-  if (job) {
-    await triggerContentProcessing({
-      job_id: job.id,
-      user_id: userId,
-      item_id: item.id,
-      content_type: "text",
+Be specific and helpful. If this looks like a screenshot of something the user wants to remember (restaurant, event, product, etc.), extract all relevant details.`,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Please analyze this image and extract all useful information:",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: imageUrl,
+                detail: "high",
+              },
+            },
+          ],
+        },
+      ],
     });
-  }
 
-  return formatSaveConfirmation(title, undefined, job?.id);
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      return null;
+    }
+
+    // Parse JSON response
+    let jsonContent = content;
+    if (content.includes("```json")) {
+      jsonContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "");
+    } else if (content.includes("```")) {
+      jsonContent = content.replace(/```\n?/g, "");
+    }
+
+    return JSON.parse(jsonContent.trim());
+  } catch (error) {
+    console.error("[WhatsApp] Image analysis failed:", error);
+    return null;
+  }
 }
 
 /**
@@ -707,6 +731,23 @@ async function handleCommand(
         return "Please provide a search term. Example: /search restaurants";
       }
       return handleQuery(supabase, userId, args);
+
+    case "unlink": {
+      // Unlink WhatsApp from LifeOS account
+      const { error } = await supabase
+        .from("whatsapp_users")
+        .delete()
+        .eq("id", whatsappUserId);
+
+      if (error) {
+        console.error("[WhatsApp] Error unlinking:", error);
+        return "❌ Failed to unlink your account. Please try again.";
+      }
+
+      return `✅ Your WhatsApp has been unlinked from LifeOS.
+
+To link again, generate a new code from the LifeOS dashboard and send it here.`;
+    }
 
     default:
       return `Unknown command: /${command}. Try /help for available commands.`;
