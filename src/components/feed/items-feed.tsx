@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+  useContext,
+} from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TagCategory } from "@/lib/services/ai/embeddings/tags";
 import {
@@ -10,8 +17,10 @@ import {
 } from "./compact-card";
 import { FeedFilterBar } from "./feed-filter-bar";
 import { ItemDetailModal } from "./item-detail-modal";
+import { QueryResultModal } from "./query-result-modal";
 import { Button } from "@/components/ui";
 import { NovaIcon } from "@/components/icons";
+import { FilterContext } from "@/contexts/FilterContext";
 
 // Types
 export type ItemType = "hero" | "split" | "article" | "memory";
@@ -195,10 +204,43 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Filter state
-  const [activeCategories, setActiveCategories] = useState<TagCategory[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
+  // Get filter context (optional - component works without it)
+  const filterContext = useContext(FilterContext);
+
+  // Local filter state (synced with context when available)
+  const [localCategories, setLocalCategories] = useState<TagCategory[]>([]);
+  const [localSearchQuery, setLocalSearchQuery] = useState("");
   const [isListening, setIsListening] = useState(false);
+
+  // Use context values if available, otherwise use local state
+  const activeCategories = filterContext?.categories ?? localCategories;
+  const searchQuery = filterContext?.searchQuery ?? localSearchQuery;
+  const queryResult = filterContext?.queryResult ?? null;
+
+  // Setters that update both local state and context
+  const setActiveCategories = useCallback(
+    (categories: TagCategory[] | ((prev: TagCategory[]) => TagCategory[])) => {
+      const newCategories =
+        typeof categories === "function"
+          ? categories(activeCategories)
+          : categories;
+      setLocalCategories(newCategories);
+      if (filterContext?.setCategories) {
+        filterContext.setCategories(newCategories);
+      }
+    },
+    [activeCategories, filterContext],
+  );
+
+  const setSearchQuery = useCallback(
+    (query: string) => {
+      setLocalSearchQuery(query);
+      if (filterContext?.setSearchQuery) {
+        filterContext.setSearchQuery(query);
+      }
+    },
+    [filterContext],
+  );
 
   // Seen items state
   const [seenItemIds, setSeenItemIds] = useState<Set<string>>(new Set());
@@ -499,6 +541,16 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
         isOpen={isModalOpen}
         onClose={handleCloseModal}
       />
+
+      {/* Query Result Modal (from Nova commands) */}
+      {queryResult && (
+        <QueryResultModal
+          isOpen={!!queryResult}
+          onClose={() => filterContext?.dismissQueryResult?.()}
+          answer={queryResult.answer}
+          items={queryResult.items}
+        />
+      )}
     </div>
   );
 }

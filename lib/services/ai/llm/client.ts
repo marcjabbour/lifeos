@@ -12,7 +12,10 @@ import {
   RETRY_CONFIG,
   MODEL_FALLBACK,
 } from "./config";
-import { createTrace, flushLangfuse } from "@/lib/services/ai/observability/langfuse";
+import {
+  createTrace,
+  flushLangfuse,
+} from "@/lib/services/ai/observability/langfuse";
 import type {
   LLMModel,
   LLMResponse,
@@ -438,6 +441,7 @@ export class NovaLLMClient {
           ? parsed.suggestedActions
           : [],
         metadata: parsed.metadata,
+        ambiguity: parsed.ambiguity,
       };
     } catch {
       return {
