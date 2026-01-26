@@ -34,6 +34,19 @@
   --dot-success: #10b981;
   --dot-muted: #4b5563;
 
+  /* Category neon colors */
+  --neon-food: #FF6B6B;
+  --neon-tech: #8B5CF6;
+  --neon-music: #22D3EE;
+  --neon-entertainment: #EC4899;
+  --neon-fitness: #10B981;
+  --neon-travel: #3B82F6;
+  --neon-work: #F59E0B;
+  --neon-learning: #6366F1;
+  --neon-finance: #34D399;
+  --neon-social: #FB7185;
+  --neon-default: #6B7280;
+
   /* Borders */
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-default: rgba(255, 255, 255, 0.12);
@@ -152,6 +165,75 @@ select {
 }
 
 /* ========================================
+   Category Neon Glow Effects (Subtle Ambient)
+   ======================================== */
+.shadow-glow-food {
+  box-shadow: 0 0 15px rgba(255, 107, 107, 0.3), 0 0 30px rgba(255, 107, 107, 0.15);
+}
+.shadow-glow-tech {
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.3), 0 0 30px rgba(139, 92, 246, 0.15);
+}
+.shadow-glow-music {
+  box-shadow: 0 0 15px rgba(34, 211, 238, 0.3), 0 0 30px rgba(34, 211, 238, 0.15);
+}
+.shadow-glow-entertainment {
+  box-shadow: 0 0 15px rgba(236, 72, 153, 0.3), 0 0 30px rgba(236, 72, 153, 0.15);
+}
+.shadow-glow-fitness {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3), 0 0 30px rgba(16, 185, 129, 0.15);
+}
+.shadow-glow-travel {
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.3), 0 0 30px rgba(59, 130, 246, 0.15);
+}
+.shadow-glow-work {
+  box-shadow: 0 0 15px rgba(245, 158, 11, 0.3), 0 0 30px rgba(245, 158, 11, 0.15);
+}
+.shadow-glow-learning {
+  box-shadow: 0 0 15px rgba(99, 102, 241, 0.3), 0 0 30px rgba(99, 102, 241, 0.15);
+}
+.shadow-glow-finance {
+  box-shadow: 0 0 15px rgba(52, 211, 153, 0.3), 0 0 30px rgba(52, 211, 153, 0.15);
+}
+.shadow-glow-social {
+  box-shadow: 0 0 15px rgba(251, 113, 133, 0.3), 0 0 30px rgba(251, 113, 133, 0.15);
+}
+.shadow-glow-default {
+  box-shadow: 0 0 15px rgba(107, 114, 128, 0.2), 0 0 30px rgba(107, 114, 128, 0.1);
+}
+
+/* Category border colors for card accents */
+.border-glow-food { border-color: rgba(255, 107, 107, 0.4); }
+.border-glow-tech { border-color: rgba(139, 92, 246, 0.4); }
+.border-glow-music { border-color: rgba(34, 211, 238, 0.4); }
+.border-glow-entertainment { border-color: rgba(236, 72, 153, 0.4); }
+.border-glow-fitness { border-color: rgba(16, 185, 129, 0.4); }
+.border-glow-travel { border-color: rgba(59, 130, 246, 0.4); }
+.border-glow-work { border-color: rgba(245, 158, 11, 0.4); }
+.border-glow-learning { border-color: rgba(99, 102, 241, 0.4); }
+.border-glow-finance { border-color: rgba(52, 211, 153, 0.4); }
+.border-glow-social { border-color: rgba(251, 113, 133, 0.4); }
+.border-glow-default { border-color: rgba(107, 114, 128, 0.3); }
+
+/* Neon dot styles for activity widget */
+.neon-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.neon-dot-food { background: var(--neon-food); box-shadow: 0 0 6px var(--neon-food); }
+.neon-dot-tech { background: var(--neon-tech); box-shadow: 0 0 6px var(--neon-tech); }
+.neon-dot-music { background: var(--neon-music); box-shadow: 0 0 6px var(--neon-music); }
+.neon-dot-entertainment { background: var(--neon-entertainment); box-shadow: 0 0 6px var(--neon-entertainment); }
+.neon-dot-fitness { background: var(--neon-fitness); box-shadow: 0 0 6px var(--neon-fitness); }
+.neon-dot-travel { background: var(--neon-travel); box-shadow: 0 0 6px var(--neon-travel); }
+.neon-dot-work { background: var(--neon-work); box-shadow: 0 0 6px var(--neon-work); }
+.neon-dot-learning { background: var(--neon-learning); box-shadow: 0 0 6px var(--neon-learning); }
+.neon-dot-finance { background: var(--neon-finance); box-shadow: 0 0 6px var(--neon-finance); }
+.neon-dot-social { background: var(--neon-social); box-shadow: 0 0 6px var(--neon-social); }
+.neon-dot-default { background: var(--neon-default); box-shadow: 0 0 6px var(--neon-default); }
+
+/* ========================================
    Safe Area Utilities
    ======================================== */
 .safe-top {
@@ -193,6 +275,27 @@ select {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--border-strong);
+}
+
+/* Thin scrollbar utility */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-track-transparent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thumb-border-subtle::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+}
+
+.scrollbar-thumb-border::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+}
+
+.hover\:scrollbar-thumb-border:hover::-webkit-scrollbar-thumb {
+  background: var(--border-default);
 }
 
 /* ========================================

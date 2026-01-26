@@ -30,22 +30,21 @@ export function AppShell({
       </div>
 
       {/* Main Content Area */}
-      <main className="flex-1 pb-32 pt-8 md:ml-[68px] md:pb-32">
+      <main className="flex-1 pb-20 pt-6 md:ml-[68px] md:pb-20">
         <div
           className={`
             mx-auto px-4 md:px-8
             ${showWidgets ? "xl:mr-[360px]" : ""}
           `}
         >
+          {/* Command Input at Top */}
+          {showCommandInput && <CommandInput onSubmit={handleCommandSubmit} />}
           {children}
         </div>
       </main>
 
       {/* Right Widgets (Desktop only) */}
       {showWidgets && <WidgetsContainer />}
-
-      {/* Floating Command Input */}
-      {showCommandInput && <CommandInput onSubmit={handleCommandSubmit} />}
 
       {/* Mobile Bottom Navigation */}
       <MobileNav />

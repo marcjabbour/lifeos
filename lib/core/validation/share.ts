@@ -38,6 +38,18 @@ const ALLOWED_IMAGE_TYPES = [
 ];
 const MAX_IMAGE_DIMENSION = 4096;
 
+// Audio validation constants
+const MAX_AUDIO_SIZE = 25 * 1024 * 1024; // 25MB
+const ALLOWED_AUDIO_TYPES = [
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/mp4",
+  "audio/m4a",
+  "audio/wav",
+  "audio/webm",
+  "audio/ogg",
+];
+
 /**
  * Validate URL content
  */
@@ -150,6 +162,42 @@ function validateImage(base64: string): { valid: boolean; error?: string } {
 }
 
 /**
+ * Validate base64 audio content
+ */
+function validateAudio(base64: string): { valid: boolean; error?: string } {
+  // Check if it's a valid base64 data URL
+  const dataUrlMatch = base64.match(/^data:(audio\/[a-z0-9+]+);base64,(.+)$/i);
+
+  if (!dataUrlMatch) {
+    return {
+      valid: false,
+      error: "Invalid audio format. Expected base64 data URL",
+    };
+  }
+
+  const [, mimeType, data] = dataUrlMatch;
+
+  // Check MIME type
+  if (!ALLOWED_AUDIO_TYPES.includes(mimeType.toLowerCase())) {
+    return {
+      valid: false,
+      error: `Audio type ${mimeType} not allowed. Allowed: ${ALLOWED_AUDIO_TYPES.join(", ")}`,
+    };
+  }
+
+  // Check size (base64 is ~33% larger than binary)
+  const estimatedSize = (data.length * 3) / 4;
+  if (estimatedSize > MAX_AUDIO_SIZE) {
+    return {
+      valid: false,
+      error: `Audio exceeds maximum size of ${MAX_AUDIO_SIZE / 1024 / 1024}MB`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Validate the entire share request
  */
 export function validateShareRequest(body: unknown): ValidationResult {
@@ -170,9 +218,12 @@ export function validateShareRequest(body: unknown): ValidationResult {
   }
 
   // Validate content_type
-  const validTypes: ContentType[] = ["url", "text", "image"];
+  const validTypes: ContentType[] = ["url", "text", "image", "audio"];
   if (!validTypes.includes(request.content_type as ContentType)) {
-    return { valid: false, error: "content_type must be url, text, or image" };
+    return {
+      valid: false,
+      error: "content_type must be url, text, image, or audio",
+    };
   }
 
   const contentType = request.content_type as ContentType;
@@ -199,6 +250,13 @@ export function validateShareRequest(body: unknown): ValidationResult {
       const imageResult = validateImage(content);
       if (!imageResult.valid) {
         return { valid: false, error: imageResult.error };
+      }
+      break;
+    }
+    case "audio": {
+      const audioResult = validateAudio(content);
+      if (!audioResult.valid) {
+        return { valid: false, error: audioResult.error };
       }
       break;
     }
@@ -234,4 +292,10 @@ export function validateShareRequest(body: unknown): ValidationResult {
   };
 }
 
-export { MAX_URL_LENGTH, MAX_TEXT_LENGTH, MAX_IMAGE_SIZE, MAX_IMAGE_DIMENSION };
+export {
+  MAX_URL_LENGTH,
+  MAX_TEXT_LENGTH,
+  MAX_IMAGE_SIZE,
+  MAX_IMAGE_DIMENSION,
+  MAX_AUDIO_SIZE,
+};

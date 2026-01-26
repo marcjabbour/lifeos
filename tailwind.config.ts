@@ -34,6 +34,20 @@ const config: Config = {
           success: "#10b981",
           muted: "#4b5563",
         },
+        // Category neon colors (for card glows)
+        neon: {
+          food: "#FF6B6B",
+          tech: "#8B5CF6",
+          music: "#22D3EE",
+          entertainment: "#EC4899",
+          fitness: "#10B981",
+          travel: "#3B82F6",
+          work: "#F59E0B",
+          learning: "#6366F1",
+          finance: "#34D399",
+          social: "#FB7185",
+          default: "#6B7280",
+        },
         // Borders
         border: {
           subtle: "rgba(255, 255, 255, 0.08)",
@@ -68,6 +82,29 @@ const config: Config = {
           "0 0 20px rgba(245, 158, 11, 0.3), 0 0 40px rgba(245, 158, 11, 0.15)",
         "glow-blue":
           "0 0 20px rgba(59, 130, 246, 0.4), 0 0 40px rgba(59, 130, 246, 0.2)",
+        // Category-specific neon glows (subtle ambient style)
+        "glow-food":
+          "0 0 15px rgba(255, 107, 107, 0.3), 0 0 30px rgba(255, 107, 107, 0.15)",
+        "glow-tech":
+          "0 0 15px rgba(139, 92, 246, 0.3), 0 0 30px rgba(139, 92, 246, 0.15)",
+        "glow-music":
+          "0 0 15px rgba(34, 211, 238, 0.3), 0 0 30px rgba(34, 211, 238, 0.15)",
+        "glow-entertainment":
+          "0 0 15px rgba(236, 72, 153, 0.3), 0 0 30px rgba(236, 72, 153, 0.15)",
+        "glow-fitness":
+          "0 0 15px rgba(16, 185, 129, 0.3), 0 0 30px rgba(16, 185, 129, 0.15)",
+        "glow-travel":
+          "0 0 15px rgba(59, 130, 246, 0.3), 0 0 30px rgba(59, 130, 246, 0.15)",
+        "glow-work":
+          "0 0 15px rgba(245, 158, 11, 0.3), 0 0 30px rgba(245, 158, 11, 0.15)",
+        "glow-learning":
+          "0 0 15px rgba(99, 102, 241, 0.3), 0 0 30px rgba(99, 102, 241, 0.15)",
+        "glow-finance":
+          "0 0 15px rgba(52, 211, 153, 0.3), 0 0 30px rgba(52, 211, 153, 0.15)",
+        "glow-social":
+          "0 0 15px rgba(251, 113, 133, 0.3), 0 0 30px rgba(251, 113, 133, 0.15)",
+        "glow-default":
+          "0 0 15px rgba(107, 114, 128, 0.2), 0 0 30px rgba(107, 114, 128, 0.1)",
       },
       spacing: {
         "1": "4px",

@@ -1,6 +1,5 @@
 "use client";
 
-import { ReactNode } from "react";
 import { motion } from "framer-motion";
 import {
   Modal,
@@ -13,18 +12,49 @@ import {
 } from "@/components/ui";
 import {
   NovaIcon,
-  PlayIcon,
-  DownloadIcon,
   ShareIcon,
   BookmarkIcon,
   ExternalLinkIcon,
   ClockIcon,
-  CalendarIcon,
   TagIcon,
   LinkIcon,
-  XIcon,
 } from "@/components/icons";
 import { FeedItem } from "./items-feed";
+import { TagCategory } from "@/lib/services/ai/embeddings/tags";
+
+// Category gradient map for accent bars
+const CATEGORY_GRADIENT_MAP: Record<TagCategory | string, string> = {
+  food: "bg-gradient-to-r from-red-500 to-orange-400",
+  tech: "bg-gradient-to-r from-purple-500 to-indigo-400",
+  music: "bg-gradient-to-r from-cyan-500 to-blue-400",
+  entertainment: "bg-gradient-to-r from-pink-500 to-rose-400",
+  fitness: "bg-gradient-to-r from-green-500 to-emerald-400",
+  travel: "bg-gradient-to-r from-blue-500 to-sky-400",
+  work: "bg-gradient-to-r from-amber-500 to-yellow-400",
+  learning: "bg-gradient-to-r from-indigo-500 to-violet-400",
+  finance: "bg-gradient-to-r from-emerald-500 to-teal-400",
+  social: "bg-gradient-to-r from-rose-500 to-pink-400",
+  uncategorized: "bg-gradient-to-r from-gray-500 to-slate-400",
+};
+
+// Category emoji map
+const CATEGORY_EMOJI_MAP: Record<string, string> = {
+  food: "🍕",
+  tech: "💻",
+  music: "🎵",
+  entertainment: "🎬",
+  fitness: "💪",
+  travel: "✈️",
+  work: "💼",
+  learning: "📚",
+  finance: "💰",
+  social: "👥",
+  uncategorized: "📌",
+};
+
+function getCategoryEmoji(category?: TagCategory | string): string {
+  return CATEGORY_EMOJI_MAP[category || "uncategorized"] || "📌";
+}
 
 interface ItemDetailModalProps {
   item: FeedItem | null;
@@ -39,59 +69,37 @@ export function ItemDetailModal({
 }: ItemDetailModalProps) {
   if (!item) return null;
 
+  const category = item.category || "uncategorized";
+  const gradientClass =
+    CATEGORY_GRADIENT_MAP[category] || CATEGORY_GRADIENT_MAP.uncategorized;
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={item.title}
+      title=""
       size="lg"
       showCloseButton={true}
     >
       <ModalBody className="p-0">
-        {/* Hero Image/Thumbnail */}
-        {(item.thumbnailUrl || item.imageUrl) && (
-          <div className="relative">
-            <img
-              src={item.thumbnailUrl || item.imageUrl}
-              alt={item.title}
-              className="w-full h-64 object-cover"
-            />
-            <div className="absolute inset-0 bg-gradient-to-t from-bg-card via-transparent to-transparent" />
-
-            {item.novaEnriched && (
-              <div className="absolute top-4 left-4">
-                <NovaBadge />
-              </div>
-            )}
-
-            {item.type === "hero" && item.meta.duration && (
-              <div className="absolute bottom-4 right-4">
-                <Badge variant="default" className="backdrop-blur-sm">
-                  <PlayIcon size={14} />
-                  {item.meta.duration}
-                </Badge>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Category accent bar */}
+        <div className={`h-1.5 w-full ${gradientClass}`} />
 
         <div className="p-6">
-          {/* Source and Meta */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              {item.source.iconUrl && (
-                <img
-                  src={item.source.iconUrl}
-                  alt={item.source.name}
-                  className="w-6 h-6 rounded"
-                />
-              )}
-              <span className="text-sm font-medium text-text-secondary">
-                {item.source.name}
-              </span>
+          {/* Header with title and meta */}
+          <div className="mb-6">
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <h2 className="text-xl font-semibold text-text-primary leading-tight">
+                {item.title}
+              </h2>
+              {item.novaEnriched && <NovaBadge />}
             </div>
-
-            <div className="flex items-center gap-4 text-xs text-text-muted">
+            <div className="flex items-center gap-3 text-sm text-text-muted">
+              <span className="flex items-center gap-2">
+                <span className="text-base">{getCategoryEmoji(category)}</span>
+                <span className="font-medium">{item.source.name}</span>
+              </span>
+              <span className="text-text-muted/50">•</span>
               {item.meta.duration && (
                 <span className="flex items-center gap-1">
                   <ClockIcon size={14} />
@@ -104,44 +112,34 @@ export function ItemDetailModal({
                   {item.meta.readTime}
                 </span>
               )}
-              {item.meta.savedAt && (
-                <span className="flex items-center gap-1">
-                  <CalendarIcon size={14} />
-                  Saved {item.meta.savedAt}
-                </span>
-              )}
+              {item.meta.savedAt && <span>Saved {item.meta.savedAt}</span>}
             </div>
           </div>
 
-          {/* Title */}
-          {!item.thumbnailUrl && !item.imageUrl && (
-            <h2 className="text-xl font-semibold text-text-primary mb-4">
-              {item.title}
-            </h2>
-          )}
-
-          {/* Nova Commentary */}
+          {/* Nova Commentary - prominent section */}
           {item.novaCommentary && (
             <NovaInsightBlock text={item.novaCommentary} />
           )}
 
           {/* Description */}
           {item.description && (
-            <p className="text-text-secondary leading-relaxed mb-4">
+            <p className="text-text-secondary leading-relaxed mb-6">
               {item.description}
             </p>
           )}
 
           {/* Quote (for article type) */}
           {item.quote && (
-            <blockquote className="text-text-secondary italic pl-4 border-l-2 border-accent-primary mb-4 leading-relaxed">
+            <blockquote
+              className={`text-text-secondary italic pl-4 border-l-2 mb-6 leading-relaxed ${gradientClass.includes("purple") ? "border-purple-400" : "border-accent-primary"}`}
+            >
               {item.quote}
             </blockquote>
           )}
 
           {/* Memory Images */}
           {item.memoryImages && item.memoryImages.length > 0 && (
-            <div className="mb-4">
+            <div className="mb-6">
               <h4 className="text-sm font-medium text-text-primary mb-3">
                 Photos from this memory
               </h4>
@@ -165,7 +163,7 @@ export function ItemDetailModal({
 
           {/* Tags */}
           {item.tags && item.tags.length > 0 && (
-            <div className="mb-4">
+            <div className="mb-6">
               <h4 className="text-sm font-medium text-text-primary mb-2 flex items-center gap-2">
                 <TagIcon size={14} />
                 Tags
@@ -178,7 +176,7 @@ export function ItemDetailModal({
             </div>
           )}
 
-          {/* Related Connections */}
+          {/* Related Connections - core feature */}
           <RelatedConnections item={item} />
         </div>
       </ModalBody>

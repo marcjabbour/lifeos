@@ -5,7 +5,7 @@
  */
 
 // Content type enum
-export type ContentType = "url" | "text" | "image";
+export type ContentType = "url" | "text" | "image" | "audio";
 
 // Source type enum
 export type SourceType =

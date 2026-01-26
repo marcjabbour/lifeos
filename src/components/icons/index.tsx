@@ -248,6 +248,9 @@ export function MicIcon({ size = 24, className, ...props }: IconProps) {
   );
 }
 
+// Alias for MicIcon
+export const MicrophoneIcon = MicIcon;
+
 export function SendIcon({ size = 24, className, ...props }: IconProps) {
   return (
     <svg
@@ -787,6 +790,22 @@ export function AlertTriangleIcon({
       <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
       <line x1="12" y1="9" x2="12" y2="13" />
       <line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+}
+
+export function PlusIcon({ size = 24, className, ...props }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      className={className}
+      {...defaultProps}
+      {...props}
+    >
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
   );
 }
