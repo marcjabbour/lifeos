@@ -18,7 +18,7 @@ import {
 import { FeedFilterBar } from "./feed-filter-bar";
 import { ItemDetailModal } from "./item-detail-modal";
 import { QueryResultModal } from "./query-result-modal";
-import { Button } from "@/components/ui";
+import { Button, ConfirmDialog } from "@/components/ui";
 import { NovaIcon } from "@/components/icons";
 import { FilterContext } from "@/contexts/FilterContext";
 
@@ -245,6 +245,10 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
   // Seen items state
   const [seenItemIds, setSeenItemIds] = useState<Set<string>>(new Set());
 
+  // Delete confirmation state
+  const [itemToDelete, setItemToDelete] = useState<FeedItem | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
   const observerTarget = useRef<HTMLDivElement>(null);
 
   // Filter items based on active categories, search query, and seen status
@@ -337,6 +341,49 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
         return next;
       });
     }
+  }, []);
+
+  // Delete item handlers
+  const handleDeleteClick = useCallback(
+    (itemId: string) => {
+      const item = items.find((i) => i.id === itemId);
+      if (item) {
+        setItemToDelete(item);
+        setIsDeleteDialogOpen(true);
+      }
+    },
+    [items],
+  );
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!itemToDelete) return;
+
+    const itemId = itemToDelete.id;
+
+    // Optimistically remove from UI
+    setItems((prev) => prev.filter((item) => item.id !== itemId));
+    setIsDeleteDialogOpen(false);
+    setItemToDelete(null);
+
+    try {
+      // Persist to backend (soft delete / archive)
+      const response = await fetch(`/api/items/${itemId}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to delete item");
+      }
+    } catch (error) {
+      // Revert on error - re-add the item
+      console.error("Failed to delete item:", error);
+      setItems((prev) => [...prev, itemToDelete]);
+    }
+  }, [itemToDelete]);
+
+  const handleDeleteCancel = useCallback(() => {
+    setIsDeleteDialogOpen(false);
+    setItemToDelete(null);
   }, []);
 
   const handleVoiceInput = useCallback(async () => {
@@ -488,6 +535,7 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
                   category={item.category}
                   onClick={() => handleItemClick(item)}
                   onMarkSeen={handleMarkSeen}
+                  onDelete={handleDeleteClick}
                 />
               </motion.div>
             ))
@@ -551,6 +599,18 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
           items={queryResult.items}
         />
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={isDeleteDialogOpen}
+        title="Delete Item"
+        message={`Are you sure you want to delete "${itemToDelete?.title || "this item"}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
     </div>
   );
 }

@@ -158,7 +158,8 @@ export type UserIntent =
   | { type: "save_image"; mediaUrl: string; caption?: string }
   | { type: "save_text"; text: string }
   | { type: "query"; question: string }
-  | { type: "clarification_response"; selection: number | string };
+  | { type: "clarification_response"; selection: number | string }
+  | { type: "delete_confirm"; confirmed: boolean };
 
 /**
  * Check if message looks like a clarification response (single digit 1-9)
@@ -166,6 +167,21 @@ export type UserIntent =
 export function isClarificationResponse(body: string): boolean {
   const trimmed = body.trim();
   return /^[1-9]$/.test(trimmed);
+}
+
+/**
+ * Check if message is a delete confirmation response (YES/NO)
+ */
+export function isDeleteConfirmationResponse(body: string): boolean {
+  const trimmed = body.trim().toUpperCase();
+  return trimmed === "YES" || trimmed === "NO";
+}
+
+/**
+ * Parse delete confirmation response
+ */
+export function parseDeleteConfirmation(body: string): boolean {
+  return body.trim().toUpperCase() === "YES";
 }
 
 export function detectIntent(message: ParsedMessage): UserIntent {

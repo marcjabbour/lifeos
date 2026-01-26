@@ -7,7 +7,7 @@ import {
   CATEGORY_BORDER_MAP,
 } from "@/lib/services/ai/embeddings/tags";
 import { Tag } from "@/components/ui";
-import { NovaIcon, CheckIcon } from "@/components/icons";
+import { NovaIcon, CheckIcon, TrashIcon } from "@/components/icons";
 
 // Category emoji fallback map
 const CATEGORY_EMOJI_MAP: Record<string, string> = {
@@ -112,6 +112,7 @@ export interface CompactCardProps extends Omit<
   category?: TagCategory;
   onClick?: () => void;
   onMarkSeen?: (itemId: string) => void;
+  onDelete?: (itemId: string) => void;
 }
 
 const MAX_VISIBLE_TAGS = 2;
@@ -121,6 +122,7 @@ export function CompactCard({
   category = item.category || "uncategorized",
   onClick,
   onMarkSeen,
+  onDelete,
   className = "",
   ...props
 }: CompactCardProps) {
@@ -210,19 +212,35 @@ export function CompactCard({
             <div />
           )}
 
-          {/* Mark as Seen button (only show if not seen) */}
-          {!item.isSeen && onMarkSeen && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onMarkSeen(item.id);
-              }}
-              className="flex items-center gap-1 rounded-full bg-bg-hover px-2 py-1 text-[10px] text-text-muted transition-colors hover:bg-green-500/20 hover:text-green-400"
-              title="Mark as seen"
-            >
-              <CheckIcon size={10} />
-            </button>
-          )}
+          {/* Action buttons */}
+          <div className="flex items-center gap-1">
+            {/* Mark as Seen button (only show if not seen) */}
+            {!item.isSeen && onMarkSeen && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMarkSeen(item.id);
+                }}
+                className="flex items-center gap-1 rounded-full bg-bg-hover px-2 py-1 text-[10px] text-text-muted opacity-0 transition-all hover:bg-green-500/20 hover:text-green-400 group-hover:opacity-100"
+                title="Mark as seen"
+              >
+                <CheckIcon size={10} />
+              </button>
+            )}
+            {/* Delete button (shows on hover) */}
+            {onDelete && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(item.id);
+                }}
+                className="flex items-center gap-1 rounded-full bg-bg-hover px-2 py-1 text-[10px] text-text-muted opacity-0 transition-all hover:bg-red-500/20 hover:text-red-400 group-hover:opacity-100"
+                title="Delete item"
+              >
+                <TrashIcon size={10} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

@@ -39,3 +39,6 @@ export type { ModalProps, ModalBodyProps, ModalFooterProps } from "./modal";
 
 export { ToastProvider, useToast, useToastActions } from "./toast";
 export type { Toast, ToastType } from "./toast";
+
+export { ConfirmDialog } from "./confirm-dialog";
+export type { ConfirmDialogProps } from "./confirm-dialog";

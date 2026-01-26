@@ -203,9 +203,58 @@ Query your content:
 Commands:
 • /recent - Show recent items
 • /search [query] - Search items
+• /delete - Delete most recent item
+• /delete [number] - Delete item from /recent list
 • /help - Show this message
 
 Learn more at lifeos.app/whatsapp`;
+}
+
+/**
+ * Format delete confirmation request
+ */
+export function formatDeleteConfirmation(item: FeedItemSummary): string {
+  const emoji = getCategoryEmoji(item.category || "uncategorized");
+  return `⚠️ Delete this item?
+
+${emoji} ${truncateText(item.title, 60)}
+${item.source ? `📂 ${item.source}` : ""}
+
+Reply *YES* to confirm or *NO* to cancel.`;
+}
+
+/**
+ * Format delete success message
+ */
+export function formatDeleteSuccess(title: string): string {
+  return `🗑️ Deleted!
+
+"${truncateText(title, 50)}" has been removed from your LifeOS.`;
+}
+
+/**
+ * Format delete cancelled message
+ */
+export function formatDeleteCancelled(): string {
+  return `✅ Deletion cancelled. Your item is safe!`;
+}
+
+/**
+ * Format delete error - no items found
+ */
+export function formatDeleteNoItems(): string {
+  return `❌ No items found to delete.
+
+Send /recent to see your saved items first.`;
+}
+
+/**
+ * Format delete error - invalid selection
+ */
+export function formatDeleteInvalidSelection(maxItems: number): string {
+  return `❌ Invalid selection.
+
+Please use /recent first, then /delete [number] where number is 1-${maxItems}.`;
 }
 
 /**

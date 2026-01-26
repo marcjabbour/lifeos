@@ -20,6 +20,8 @@ import {
   parseWebhookPayload,
   detectIntent,
   isClarificationResponse,
+  isDeleteConfirmationResponse,
+  parseDeleteConfirmation,
   formatSaveConfirmation,
   formatSearchResults,
   formatNovaAnswer,
@@ -27,6 +29,11 @@ import {
   formatWelcomeMessage,
   formatErrorMessage,
   formatHelpMessage,
+  formatDeleteConfirmation,
+  formatDeleteSuccess,
+  formatDeleteCancelled,
+  formatDeleteNoItems,
+  formatDeleteInvalidSelection,
   type TwilioWebhookPayload,
   type FeedItemSummary,
 } from "@/lib/services/whatsapp";
@@ -129,8 +136,34 @@ export async function POST(request: NextRequest) {
       .update({ last_message_at: new Date().toISOString() })
       .eq("id", whatsappUser.whatsapp_user_id);
 
-    // Check for pending clarifications first
+    // Check for pending delete confirmation first (YES/NO)
     const body = message.body.trim();
+    if (isDeleteConfirmationResponse(body)) {
+      const deleteResponse = await handleDeleteConfirmation(
+        supabase,
+        whatsappUser.whatsapp_user_id,
+        whatsappUser.user_id,
+        parseDeleteConfirmation(body),
+      );
+      if (deleteResponse) {
+        // Log and send the delete response
+        const outboundMessage = await sendWhatsAppMessage(twilioConfig, {
+          to: message.from,
+          body: deleteResponse,
+        });
+        await supabase.from("whatsapp_messages").insert({
+          whatsapp_user_id: whatsappUser.whatsapp_user_id,
+          message_sid: outboundMessage.sid,
+          direction: "outbound",
+          message_type: "text",
+          content: deleteResponse,
+        });
+        return createTwiMLResponse();
+      }
+      // No pending delete found, continue with normal intent detection
+    }
+
+    // Check for pending clarifications
     if (isClarificationResponse(body)) {
       const clarificationResponse = await handleClarificationResponse(
         supabase,
@@ -200,6 +233,7 @@ export async function POST(request: NextRequest) {
           responseText = await handleCommand(
             supabase,
             whatsappUser.user_id,
+            whatsappUser.whatsapp_user_id,
             intent.command,
             intent.args,
           );
@@ -544,6 +578,7 @@ async function handleQuery(
 async function handleCommand(
   supabase: ReturnType<typeof getServiceClient>,
   userId: string,
+  whatsappUserId: string,
   command: string,
   args: string,
 ): Promise<string> {
@@ -569,11 +604,102 @@ async function handleCommand(
         savedAt: item.created_at,
       }));
 
+      // Store recent items for potential delete operation
+      if (items && items.length > 0) {
+        await supabase.from("pending_deletes").upsert(
+          {
+            whatsapp_user_id: whatsappUserId,
+            user_id: userId,
+            recent_items: items.map((i) => ({
+              id: i.id,
+              title: i.title,
+              category: i.category,
+            })),
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "whatsapp_user_id" },
+        );
+      }
+
       return formatSearchResults(
         "recent items",
         formattedItems,
         formattedItems.length,
       );
+    }
+
+    case "delete": {
+      // Parse the argument - can be empty (last item), a number (from /recent list), or "last"
+      const arg = args.trim().toLowerCase();
+
+      // Get the item to delete
+      let itemToDelete: {
+        id: string;
+        title: string;
+        category?: string;
+      } | null = null;
+
+      if (!arg || arg === "last") {
+        // Delete most recent item
+        const { data: recentItem } = await supabase
+          .from("items")
+          .select("id, title, category")
+          .eq("user_id", userId)
+          .eq("is_archived", false)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .single();
+
+        itemToDelete = recentItem;
+      } else if (/^\d+$/.test(arg)) {
+        // Delete by index from /recent list
+        const index = parseInt(arg, 10);
+
+        // Get cached recent items
+        const { data: pendingDelete } = await supabase
+          .from("pending_deletes")
+          .select("recent_items")
+          .eq("whatsapp_user_id", whatsappUserId)
+          .single();
+
+        const recentItems = pendingDelete?.recent_items as Array<{
+          id: string;
+          title: string;
+          category?: string;
+        }> | null;
+
+        if (!recentItems || recentItems.length === 0) {
+          return formatDeleteNoItems();
+        }
+
+        if (index < 1 || index > recentItems.length) {
+          return formatDeleteInvalidSelection(recentItems.length);
+        }
+
+        itemToDelete = recentItems[index - 1];
+      }
+
+      if (!itemToDelete) {
+        return formatDeleteNoItems();
+      }
+
+      // Store pending delete confirmation
+      await supabase.from("pending_deletes").upsert(
+        {
+          whatsapp_user_id: whatsappUserId,
+          user_id: userId,
+          item_to_delete: itemToDelete,
+          awaiting_confirmation: true,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "whatsapp_user_id" },
+      );
+
+      return formatDeleteConfirmation({
+        id: itemToDelete.id,
+        title: itemToDelete.title,
+        category: itemToDelete.category,
+      });
     }
 
     case "search":
@@ -585,6 +711,68 @@ async function handleCommand(
     default:
       return `Unknown command: /${command}. Try /help for available commands.`;
   }
+}
+
+/**
+ * Handle delete confirmation response from user (YES/NO)
+ *
+ * Returns response message if there was a pending delete,
+ * or null if no pending delete exists.
+ */
+async function handleDeleteConfirmation(
+  supabase: ReturnType<typeof getServiceClient>,
+  whatsappUserId: string,
+  userId: string,
+  confirmed: boolean,
+): Promise<string | null> {
+  // Find pending delete for this user
+  const { data: pendingDelete, error } = await supabase
+    .from("pending_deletes")
+    .select("*")
+    .eq("whatsapp_user_id", whatsappUserId)
+    .eq("awaiting_confirmation", true)
+    .single();
+
+  if (error || !pendingDelete || !pendingDelete.item_to_delete) {
+    return null; // No pending delete
+  }
+
+  const itemToDelete = pendingDelete.item_to_delete as {
+    id: string;
+    title: string;
+    category?: string;
+  };
+
+  // Clear the pending delete state
+  await supabase
+    .from("pending_deletes")
+    .update({
+      awaiting_confirmation: false,
+      item_to_delete: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("whatsapp_user_id", whatsappUserId);
+
+  if (!confirmed) {
+    return formatDeleteCancelled();
+  }
+
+  // Perform the deletion (soft delete by archiving)
+  const { error: deleteError } = await supabase
+    .from("items")
+    .update({
+      is_archived: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", itemToDelete.id)
+    .eq("user_id", userId);
+
+  if (deleteError) {
+    console.error("[WhatsApp] Error deleting item:", deleteError);
+    return formatErrorMessage("Failed to delete the item. Please try again.");
+  }
+
+  return formatDeleteSuccess(itemToDelete.title);
 }
 
 /**
