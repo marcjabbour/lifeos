@@ -17,6 +17,8 @@ export {
   type PerceiveInput,
   type PerceiveOutput,
   type ContentType,
+  type AmbiguityInfo,
+  type AmbiguityInterpretation,
 } from "./nova/perception";
 
 export {

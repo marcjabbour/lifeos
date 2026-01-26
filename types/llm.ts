@@ -91,6 +91,18 @@ export interface PerceiveParams {
   context?: string;
 }
 
+export interface AmbiguityInterpretation {
+  type: string;
+  label: string;
+  confidence: number;
+}
+
+export interface AmbiguityInfo {
+  isAmbiguous: boolean;
+  reason?: string;
+  possibleInterpretations?: AmbiguityInterpretation[];
+}
+
 export interface PerceptionResult {
   summary: string;
   contentType: string;
@@ -100,6 +112,7 @@ export interface PerceptionResult {
   confidence: number;
   suggestedActions?: string[];
   metadata?: Record<string, unknown>;
+  ambiguity?: AmbiguityInfo;
 }
 
 // Reasoning params and result
