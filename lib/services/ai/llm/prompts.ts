@@ -80,10 +80,17 @@ IMPORTANT: For short text (1-5 words):
 - Be creative with the summary - infer what the user likely wants to remember about this
 
 Examples:
-- "Barbalu Brooklyn" → contentType: "restaurant", summary: "Italian restaurant in Brooklyn - saved as a place to try", topics: ["food", "italian", "brooklyn", "restaurants"], ambiguity: { isAmbiguous: false }
-- "The Great Gatsby" → contentType: "book", summary: "Classic novel by F. Scott Fitzgerald", topics: ["literature", "classic", "fiction"], ambiguity: { isAmbiguous: false }
-- "Buy milk tomorrow" → contentType: "reminder", summary: "Reminder to buy milk", topics: ["groceries", "todo"], ambiguity: { isAmbiguous: false }
+- "Barbalu Brooklyn" → contentType: "restaurant", summary: "Italian restaurant in Brooklyn - saved as a place to try", topics: ["food", "italian", "brooklyn", "restaurants"], suggestedActions: ["save", "web_search", "add_to_list"], metadata: { title: "Barbalu", category: "food" }, ambiguity: { isAmbiguous: false }
+- "The Great Gatsby" → contentType: "book", summary: "Classic novel by F. Scott Fitzgerald", topics: ["literature", "classic", "fiction"], suggestedActions: ["save", "web_search"], metadata: { title: "The Great Gatsby" }, ambiguity: { isAmbiguous: false }
+- "Buy milk tomorrow" → contentType: "reminder", summary: "Reminder to buy milk", topics: ["groceries", "todo"], suggestedActions: ["save"], metadata: { title: "Buy milk tomorrow" }, ambiguity: { isAmbiguous: false }
 - "Mercury" → contentType: "other", confidence: 0.3, ambiguity: { isAmbiguous: true, reason: "Could refer to multiple things", possibleInterpretations: [{ type: "place", label: "Planet Mercury", confidence: 0.3 }, { type: "other", label: "Mercury (chemical element)", confidence: 0.3 }, { type: "other", label: "Mercury Records (music label)", confidence: 0.2 }] }
+
+IMPORTANT for restaurants, places, books, movies, and products:
+- ALWAYS include "web_search" in suggestedActions so we can fetch additional info
+- ALWAYS provide a clean "title" in metadata (the actual name, not the user's message)
+- For restaurants: title should be just the restaurant name (e.g., "Barbalu" not "I want to eat at Barbalu")
+- For places: title should be the place name
+- For books/movies: title should be the official title
 
 Suggested actions should be contextually relevant:
 - "save" - Save for later reference

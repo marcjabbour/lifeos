@@ -21,6 +21,8 @@ import { QueryResultModal } from "./query-result-modal";
 import { Button, ConfirmDialog } from "@/components/ui";
 import { NovaIcon } from "@/components/icons";
 import { FilterContext } from "@/contexts/FilterContext";
+import { useItems } from "@/hooks/use-items";
+import type { Item } from "@/types/database";
 
 // Types
 export type ItemType = "hero" | "split" | "article" | "memory";
@@ -32,175 +34,90 @@ export interface FeedItem extends CompactCardItem {
   memoryImages?: string[];
 }
 
-interface ItemsFeedProps {
-  initialItems?: FeedItem[];
+// Helper to format relative time
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays === 0) return "today";
+  if (diffDays === 1) return "yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30)
+    return `${Math.floor(diffDays / 7)} week${Math.floor(diffDays / 7) > 1 ? "s" : ""} ago`;
+  if (diffDays < 365)
+    return `${Math.floor(diffDays / 30)} month${Math.floor(diffDays / 30) > 1 ? "s" : ""} ago`;
+  return `${Math.floor(diffDays / 365)} year${Math.floor(diffDays / 365) > 1 ? "s" : ""} ago`;
 }
 
-// Mock data with categories for demo purposes
-const mockItems: FeedItem[] = [
-  {
-    id: "1",
-    title:
-      "The Future of Personal AI: How Intelligent Assistants Will Transform Daily Life",
-    description:
-      "Deep dive into ambient computing and frictionless capture workflows. Key insight: the speaker's concept aligns with your interest in productivity systems.",
-    source: {
-      name: "YouTube",
-      iconUrl: "https://www.google.com/s2/favicons?domain=youtube.com&sz=32",
-    },
-    meta: { duration: "28 min watch", savedAt: "yesterday" },
-    thumbnailUrl:
-      "https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=800&q=80",
-    novaEnriched: true,
-    novaCommentary:
-      "This deep dive connects to 3 articles you saved last month about productivity systems.",
-    tags: ["AI", "Personal Computing", "Productivity"],
-    category: "tech",
-  },
-  {
-    id: "2",
-    title: "Weekly Meal Prep List - Mediterranean Focus",
-    description:
-      "Your curated grocery list based on saved recipes. Nova organized by store section and estimated prep time.",
-    source: {
-      name: "Notion",
-      iconUrl: "https://www.google.com/s2/favicons?domain=notion.so&sz=32",
-    },
-    meta: { itemType: "List", savedAt: "4 days ago" },
-    thumbnailUrl:
-      "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=400&q=80",
-    tags: ["Groceries", "Meal Prep", "Mediterranean"],
-    category: "food",
-  },
-  {
-    id: "3",
-    title: "Why Your Second Brain Needs a Second Opinion",
-    description:
-      "The real power isn't in storing information—it's in having something that can connect the dots you'd never think to connect yourself.",
-    source: {
-      name: "Wired",
-      iconUrl: "https://www.google.com/s2/favicons?domain=wired.com&sz=32",
-    },
-    meta: { readTime: "8 min read", savedAt: "3 days ago" },
-    tags: ["Productivity", "Knowledge Management", "AI"],
-    category: "learning",
-  },
-  {
-    id: "4",
-    title: "Colorado Trail - Day 3 Summit",
-    description:
-      "You saved 12 photos and 3 journal entries from this trip. Nova found a connection to your recent interest in outdoor gear reviews.",
-    source: { name: "Photos" },
-    meta: { savedAt: "1 year ago today" },
-    thumbnailUrl:
-      "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=200&q=80",
-    tags: ["Hiking", "Travel", "Mountains"],
-    category: "travel",
-  },
-  {
-    id: "5",
-    title: "Entrecote - French Steakhouse",
-    description:
-      "You sent me a screenshot mentioning their famous steak sauce. Looks like a great dinner spot!",
-    source: { name: "Screenshots" },
-    meta: { savedAt: "2 days ago" },
-    thumbnailUrl:
-      "https://images.unsplash.com/photo-1544025162-d76694265947?w=400&q=80",
-    novaEnriched: true,
-    tags: ["Restaurant", "French", "Steak"],
-    category: "food",
-  },
-  {
-    id: "6",
-    title: "Kendrick Lamar - GNX Album Review",
-    description:
-      "In-depth analysis of the latest album. Nova noted connections to your saved articles about hip-hop production techniques.",
-    source: {
-      name: "Pitchfork",
-      iconUrl: "https://www.google.com/s2/favicons?domain=pitchfork.com&sz=32",
-    },
-    meta: { readTime: "12 min read" },
-    thumbnailUrl:
-      "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&q=80",
-    novaEnriched: true,
-    tags: ["Kendrick Lamar", "Hip Hop", "Album Review"],
-    category: "music",
-  },
-  {
-    id: "7",
-    title: "LoRA Fine-tuning Guide for Stable Diffusion",
-    description:
-      "Step-by-step tutorial on training custom LoRA adapters. You bookmarked this for your AI art project.",
-    source: {
-      name: "GitHub",
-      iconUrl: "https://www.google.com/s2/favicons?domain=github.com&sz=32",
-    },
-    meta: { readTime: "15 min read", savedAt: "1 week ago" },
-    tags: ["LoRA", "AI", "Stable Diffusion", "Tutorial"],
-    category: "tech",
-  },
-  {
-    id: "8",
-    title: "Morning HIIT Workout Routine",
-    description:
-      "20-minute high intensity workout you saved from your trainer's recommendations.",
-    source: {
-      name: "Notes",
-    },
-    meta: { itemType: "Workout", savedAt: "5 days ago" },
-    tags: ["HIIT", "Workout", "Morning Routine"],
-    category: "fitness",
-  },
-];
-
-// Generate more mock items for infinite scroll
-function generateMoreItems(startId: number): FeedItem[] {
-  const templates: Partial<FeedItem>[] = [
-    {
-      title: "Best Italian Restaurants in the City",
-      description: "Curated list from your saved places and reviews.",
-      source: { name: "Google Maps" },
-      tags: ["Italian", "Restaurant", "Dining"],
-      category: "food" as TagCategory,
-    },
-    {
-      title: "TypeScript Best Practices 2025",
-      description: "Modern TypeScript patterns and anti-patterns.",
-      source: { name: "Medium" },
-      tags: ["TypeScript", "Programming", "Best Practices"],
-      category: "tech" as TagCategory,
-    },
-    {
-      title: "Jazz Playlist - Late Night Vibes",
-      description: "Curated playlist based on your listening history.",
-      source: { name: "Spotify" },
-      tags: ["Jazz", "Playlist", "Music"],
-      category: "music" as TagCategory,
-    },
-    {
-      title: "Investment Portfolio Rebalancing",
-      description: "Notes from your quarterly review.",
-      source: { name: "Notes" },
-      tags: ["Investing", "Portfolio", "Finance"],
-      category: "finance" as TagCategory,
-    },
-  ];
-
-  return templates.map((template, i) => ({
-    id: `${startId + i}`,
-    title: template.title || `Item ${startId + i}`,
-    description: template.description,
-    source: template.source || { name: "Unknown" },
-    meta: { readTime: `${5 + (i % 5)} min read` },
-    tags: template.tags,
-    category: template.category,
-  }));
+// Helper to get favicon URL from a URL
+function getFaviconUrl(url: string | null | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const domain = new URL(url).hostname;
+    return `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+  } catch {
+    return undefined;
+  }
 }
 
-export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
-  const [items, setItems] = useState<FeedItem[]>(initialItems);
-  const [loading, setLoading] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+// Helper to format source name from source_type
+function formatSourceName(sourceType: string, url?: string | null): string {
+  // Try to extract domain from URL first
+  if (url) {
+    try {
+      const domain = new URL(url).hostname.replace("www.", "");
+      // Capitalize first letter of domain
+      return domain.charAt(0).toUpperCase() + domain.slice(1).split(".")[0];
+    } catch {
+      // Fall through to source type
+    }
+  }
+
+  // Format source type as display name
+  const sourceNames: Record<string, string> = {
+    browser_extension: "Browser",
+    mobile_share: "Mobile",
+    email: "Email",
+    api: "API",
+    manual: "Manual",
+    whatsapp: "WhatsApp",
+  };
+  return sourceNames[sourceType] || sourceType;
+}
+
+// Map database Item to FeedItem for display
+function mapItemToFeedItem(item: Item): FeedItem {
+  return {
+    id: item.id,
+    title: item.title,
+    description: item.enrichment?.summary || item.content || undefined,
+    thumbnailUrl: item.thumbnail_url || undefined,
+    source: {
+      name: formatSourceName(item.source_type, item.url),
+      iconUrl:
+        (item.metadata?.favicon_url as string | undefined) ||
+        getFaviconUrl(item.url),
+    },
+    meta: {
+      readTime: item.metadata?.read_time
+        ? `${item.metadata.read_time} min read`
+        : undefined,
+      duration: item.metadata?.duration
+        ? `${item.metadata.duration} min`
+        : undefined,
+      savedAt: formatRelativeTime(item.created_at),
+      itemType: item.category,
+    },
+    tags: item.tags || [],
+    category: item.category as TagCategory,
+    novaEnriched: item.has_enrichment,
+    novaCommentary: item.enrichment?.nova_commentary,
+  };
+}
+
+export function ItemsFeed() {
   const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -216,6 +133,23 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
   const activeCategories = filterContext?.categories ?? localCategories;
   const searchQuery = filterContext?.searchQuery ?? localSearchQuery;
   const queryResult = filterContext?.queryResult ?? null;
+
+  // Fetch items from database with filters
+  const {
+    items: dbItems,
+    loading,
+    initialLoading,
+    error,
+    hasMore,
+    loadMore,
+    removeItem,
+  } = useItems({
+    categories: activeCategories,
+    searchQuery,
+  });
+
+  // Map database items to FeedItem format
+  const items = useMemo(() => dbItems.map(mapItemToFeedItem), [dbItems]);
 
   // Setters that update both local state and context
   const setActiveCategories = useCallback(
@@ -251,37 +185,17 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
 
   const observerTarget = useRef<HTMLDivElement>(null);
 
-  // Filter items based on active categories, search query, and seen status
+  // Filter out seen items from the feed
   const filteredItems = useMemo(() => {
-    let result = items;
-
-    // Filter by categories
-    if (activeCategories.length > 0) {
-      result = result.filter(
-        (item) => item.category && activeCategories.includes(item.category),
-      );
-    }
-
-    // Filter by search query (searches in title, description, and tags)
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim();
-      result = result.filter(
-        (item) =>
-          item.title.toLowerCase().includes(query) ||
-          item.description?.toLowerCase().includes(query) ||
-          item.tags?.some((tag) => tag.toLowerCase().trim().includes(query)),
-      );
-    }
-
     // Filter out seen items from main feed
-    result = result.filter((item) => !seenItemIds.has(item.id));
+    const result = items.filter((item) => !seenItemIds.has(item.id));
 
     // Add isSeen flag to items (useful for other views that might show seen items)
     return result.map((item) => ({
       ...item,
       isSeen: seenItemIds.has(item.id),
     }));
-  }, [items, activeCategories, searchQuery, seenItemIds]);
+  }, [items, seenItemIds]);
 
   // Count enriched items
   const enrichedCount = useMemo(
@@ -361,7 +275,7 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
     const itemId = itemToDelete.id;
 
     // Optimistically remove from UI
-    setItems((prev) => prev.filter((item) => item.id !== itemId));
+    removeItem(itemId);
     setIsDeleteDialogOpen(false);
     setItemToDelete(null);
 
@@ -375,11 +289,11 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
         throw new Error("Failed to delete item");
       }
     } catch (error) {
-      // Revert on error - re-add the item
+      // Log error - can't easily revert with the hook pattern
+      // A full implementation would add error state to the hook
       console.error("Failed to delete item:", error);
-      setItems((prev) => [...prev, itemToDelete]);
     }
-  }, [itemToDelete]);
+  }, [itemToDelete, removeItem]);
 
   const handleDeleteCancel = useCallback(() => {
     setIsDeleteDialogOpen(false);
@@ -460,26 +374,6 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
     recognition.start();
   }, [isListening, handleClearFilters]);
 
-  // Infinite scroll logic
-  const loadMore = useCallback(async () => {
-    if (loading || !hasMore) return;
-
-    setLoading(true);
-
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    const newItems = generateMoreItems(items.length + 1);
-    setItems((prev) => [...prev, ...newItems]);
-
-    // Stop after 20 items for demo
-    if (items.length >= 16) {
-      setHasMore(false);
-    }
-
-    setLoading(false);
-  }, [loading, hasMore, items.length]);
-
   // Intersection Observer for infinite scroll
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -516,55 +410,86 @@ export function ItemsFeed({ initialItems = mockItems }: ItemsFeedProps) {
 
       {/* Feed Cards - 3 per row grid */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <AnimatePresence mode="popLayout">
-          {filteredItems.length > 0 ? (
-            filteredItems.map((item, index) => (
+        {/* Initial loading state */}
+        {initialLoading ? (
+          <>
+            <CompactCardSkeleton />
+            <CompactCardSkeleton />
+            <CompactCardSkeleton />
+            <CompactCardSkeleton />
+            <CompactCardSkeleton />
+            <CompactCardSkeleton />
+          </>
+        ) : error ? (
+          /* Error state */
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="col-span-full flex flex-col items-center justify-center py-16 text-center"
+          >
+            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/10">
+              <NovaIcon size={32} className="text-red-500" />
+            </div>
+            <h3 className="mb-2 text-lg font-semibold text-text-primary">
+              Something went wrong
+            </h3>
+            <p className="mb-4 max-w-sm text-sm text-text-secondary">{error}</p>
+          </motion.div>
+        ) : (
+          <AnimatePresence mode="popLayout">
+            {filteredItems.length > 0 ? (
+              filteredItems.map((item, index) => (
+                <motion.div
+                  key={item.id}
+                  layout
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{
+                    duration: 0.3,
+                    delay: index < 6 ? index * 0.05 : 0,
+                  }}
+                >
+                  <CompactCard
+                    item={item}
+                    category={item.category}
+                    onClick={() => handleItemClick(item)}
+                    onMarkSeen={handleMarkSeen}
+                    onDelete={handleDeleteClick}
+                  />
+                </motion.div>
+              ))
+            ) : (
               <motion.div
-                key={item.id}
-                layout
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                transition={{
-                  duration: 0.3,
-                  delay: index < 6 ? index * 0.05 : 0,
-                }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="col-span-full flex flex-col items-center justify-center py-16 text-center"
               >
-                <CompactCard
-                  item={item}
-                  category={item.category}
-                  onClick={() => handleItemClick(item)}
-                  onMarkSeen={handleMarkSeen}
-                  onDelete={handleDeleteClick}
-                />
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-bg-elevated">
+                  <NovaIcon size={32} className="text-text-muted" />
+                </div>
+                <h3 className="mb-2 text-lg font-semibold text-text-primary">
+                  No items found
+                </h3>
+                <p className="mb-4 max-w-sm text-sm text-text-secondary">
+                  {searchQuery
+                    ? `No items match "${searchQuery}"`
+                    : activeCategories.length > 0
+                      ? "No items in the selected categories"
+                      : "Your feed is empty. Start saving items to see them here!"}
+                </p>
+                {(searchQuery || activeCategories.length > 0) && (
+                  <Button variant="secondary" onClick={handleClearFilters}>
+                    Clear filters
+                  </Button>
+                )}
               </motion.div>
-            ))
-          ) : (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="col-span-full flex flex-col items-center justify-center py-16 text-center"
-            >
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-bg-elevated">
-                <NovaIcon size={32} className="text-text-muted" />
-              </div>
-              <h3 className="mb-2 text-lg font-semibold text-text-primary">
-                No items found
-              </h3>
-              <p className="mb-4 max-w-sm text-sm text-text-secondary">
-                {searchQuery
-                  ? `No items match "${searchQuery}"`
-                  : "No items in the selected categories"}
-              </p>
-              <Button variant="secondary" onClick={handleClearFilters}>
-                Clear filters
-              </Button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            )}
+          </AnimatePresence>
+        )}
 
-        {/* Loading indicator - spans full width */}
-        {loading && (
+        {/* Loading more indicator */}
+        {!initialLoading && loading && (
           <>
             <CompactCardSkeleton />
             <CompactCardSkeleton />

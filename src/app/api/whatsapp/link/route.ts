@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { withAuth, type AuthContext } from "@/lib/auth";
+import { getServiceClient } from "@/lib/core/database";
 
 /**
  * Generate a random 6-digit verification code
@@ -25,19 +26,22 @@ async function handleGenerateCode(
   context: AuthContext,
 ): Promise<NextResponse> {
   try {
+    // Use service client to bypass RLS (we've already authenticated the user)
+    const supabase = getServiceClient();
+
     // Generate a new 6-digit code
     const code = generateCode();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
     // Invalidate any existing unused codes for this user
-    await context.supabase
+    await supabase
       .from("whatsapp_link_codes")
       .update({ used_at: new Date().toISOString() })
       .eq("user_id", context.userId)
       .is("used_at", null);
 
     // Create new code
-    const { data, error } = await context.supabase
+    const { data, error } = await supabase
       .from("whatsapp_link_codes")
       .insert({
         user_id: context.userId,
@@ -80,8 +84,11 @@ async function handleGetStatus(
   context: AuthContext,
 ): Promise<NextResponse> {
   try {
+    // Use service client to bypass RLS (we've already authenticated the user)
+    const supabase = getServiceClient();
+
     // Check if user has a linked WhatsApp account
-    const { data: whatsappUser, error } = await context.supabase
+    const { data: whatsappUser, error } = await supabase
       .from("whatsapp_users")
       .select("phone_number, display_name, verified_at, last_message_at")
       .eq("user_id", context.userId)
@@ -98,7 +105,7 @@ async function handleGetStatus(
 
     if (!whatsappUser) {
       // Check for pending codes
-      const { data: pendingCode } = await context.supabase
+      const { data: pendingCode } = await supabase
         .from("whatsapp_link_codes")
         .select("code, expires_at")
         .eq("user_id", context.userId)
@@ -151,7 +158,10 @@ async function handleUnlink(
   context: AuthContext,
 ): Promise<NextResponse> {
   try {
-    const { error } = await context.supabase
+    // Use service client to bypass RLS (we've already authenticated the user)
+    const supabase = getServiceClient();
+
+    const { error } = await supabase
       .from("whatsapp_users")
       .delete()
       .eq("user_id", context.userId);

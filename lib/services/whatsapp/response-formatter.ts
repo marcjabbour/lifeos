@@ -205,6 +205,7 @@ Commands:
 • /search [query] - Search items
 • /delete - Delete most recent item
 • /delete [number] - Delete item from /recent list
+• /unlink - Unlink WhatsApp from LifeOS
 • /help - Show this message
 
 Learn more at lifeos.app/whatsapp`;

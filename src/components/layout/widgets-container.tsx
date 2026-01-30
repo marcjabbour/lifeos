@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { NovaIcon, StarIcon } from "@/components/icons";
 import { NovaActivityModal } from "./nova-activity-modal";
+import { WhatsAppLink } from "@/components/settings/whatsapp-link";
 
 // Neon dot color mapping
 type NeonDotColor =
@@ -270,6 +271,7 @@ function UpgradeWidget() {
 export function WidgetsContainer() {
   return (
     <aside className="fixed right-6 top-6 bottom-6 hidden w-[320px] flex-col gap-5 overflow-y-auto pr-1 xl:flex scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border-subtle hover:scrollbar-thumb-border">
+      <WhatsAppLink />
       <ActivityWidget />
       <InsightWidget />
       <UpgradeWidget />
