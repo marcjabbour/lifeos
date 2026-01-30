@@ -1,0 +1,29 @@
+FROM node:20-alpine
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+WORKDIR /app
+
+# Copy package files for dependency installation
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY services/adk-agent/package.json ./services/adk-agent/
+
+# Install all dependencies (including devDependencies)
+RUN pnpm install
+
+# Copy source files
+COPY packages/shared ./packages/shared
+COPY services/adk-agent ./services/adk-agent
+COPY turbo.json ./
+
+# Build shared package
+RUN pnpm --filter @lifeos/shared build
+
+EXPOSE 4001
+
+ENV PORT=4001
+
+# Use tsx for hot reloading in development
+CMD ["pnpm", "--filter", "@lifeos/adk-agent", "dev"]
