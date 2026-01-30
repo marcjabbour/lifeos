@@ -104,7 +104,7 @@ export interface ItemsPage {
   hasMore: boolean;
 }
 
-export type JobStatus = "pending" | "running" | "completed" | "failed";
+export type JobStatus = "pending" | "processing" | "completed" | "failed";
 
 export type JobType = "enrich" | "process" | "extract";
 
