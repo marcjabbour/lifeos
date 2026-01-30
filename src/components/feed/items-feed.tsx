@@ -18,7 +18,7 @@ import {
 import { FeedFilterBar } from "./feed-filter-bar";
 import { ItemDetailModal } from "./item-detail-modal";
 import { QueryResultModal } from "./query-result-modal";
-import { Button, ConfirmDialog } from "@/components/ui";
+import { Button, ConfirmDialog, useToastActions } from "@/components/ui";
 import { NovaIcon } from "@/components/icons";
 import { FilterContext } from "@/contexts/FilterContext";
 import { useItems } from "@/hooks/use-items";
@@ -128,11 +128,30 @@ export function ItemsFeed() {
   const [localCategories, setLocalCategories] = useState<TagCategory[]>([]);
   const [localSearchQuery, setLocalSearchQuery] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [localQueryResult, setLocalQueryResult] = useState<{
+    answer: string;
+    items: Array<{
+      id: string;
+      title: string;
+      category: string;
+      url?: string;
+      source_type: string;
+      created_at: string;
+    }>;
+  } | null>(null);
 
   // Use context values if available, otherwise use local state
   const activeCategories = filterContext?.categories ?? localCategories;
   const searchQuery = filterContext?.searchQuery ?? localSearchQuery;
-  const queryResult = filterContext?.queryResult ?? null;
+  const queryResult = filterContext?.queryResult ?? localQueryResult;
+
+  // Dismiss local query result
+  const dismissLocalQueryResult = useCallback(() => {
+    setLocalQueryResult(null);
+  }, []);
+
+  // Toast notifications
+  const toast = useToastActions();
 
   // Fetch items from database with filters
   const {
@@ -143,6 +162,7 @@ export function ItemsFeed() {
     hasMore,
     loadMore,
     removeItem,
+    revertRemove,
   } = useItems({
     categories: activeCategories,
     searchQuery,
@@ -274,6 +294,9 @@ export function ItemsFeed() {
 
     const itemId = itemToDelete.id;
 
+    // Find the original database item for potential revert
+    const dbItemSnapshot = dbItems.find((item) => item.id === itemId);
+
     // Optimistically remove from UI
     removeItem(itemId);
     setIsDeleteDialogOpen(false);
@@ -286,14 +309,23 @@ export function ItemsFeed() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to delete item");
+        throw new Error(`Delete failed with status: ${response.status}`);
       }
     } catch (error) {
-      // Log error - can't easily revert with the hook pattern
-      // A full implementation would add error state to the hook
       console.error("Failed to delete item:", error);
+
+      // Revert the optimistic removal if we have the original item
+      if (dbItemSnapshot) {
+        revertRemove(itemId, dbItemSnapshot);
+      }
+
+      // Show error toast to user
+      toast.error(
+        "Failed to delete item",
+        "The item could not be deleted. Please try again.",
+      );
     }
-  }, [itemToDelete, removeItem]);
+  }, [itemToDelete, dbItems, removeItem, revertRemove, toast]);
 
   const handleDeleteCancel = useCallback(() => {
     setIsDeleteDialogOpen(false);
@@ -335,24 +367,36 @@ export function ItemsFeed() {
       console.log("Voice command:", transcript);
 
       try {
-        // Parse voice command through Nova's API
+        // Parse voice command through Nova's API with question handling enabled
         const response = await fetch("/api/nova/voice-filter", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ command: transcript }),
+          body: JSON.stringify({ command: transcript, handleQuestions: true }),
         });
 
         if (response.ok) {
           const data = await response.json();
-          const { intent } = data;
+          const { intent, questionResult } = data;
 
           if (intent.action === "clear") {
             handleClearFilters();
+          } else if (intent.action === "question" && questionResult) {
+            // Handle question response - show the answer modal
+            if (filterContext?.submitCommand) {
+              // Use context if available (it will show the modal)
+              await filterContext.submitCommand(transcript);
+            } else {
+              // Use local state for the modal
+              setLocalQueryResult({
+                answer: questionResult.answer,
+                items: questionResult.items,
+              });
+            }
           } else if (intent.categories?.length > 0) {
             setActiveCategories(intent.categories);
           }
 
-          if (intent.searchQuery) {
+          if (intent.searchQuery && intent.action !== "question") {
             setSearchQuery(intent.searchQuery);
           }
         }
@@ -519,7 +563,10 @@ export function ItemsFeed() {
       {queryResult && (
         <QueryResultModal
           isOpen={!!queryResult}
-          onClose={() => filterContext?.dismissQueryResult?.()}
+          onClose={() => {
+            filterContext?.dismissQueryResult?.();
+            dismissLocalQueryResult();
+          }}
           answer={queryResult.answer}
           items={queryResult.items}
         />

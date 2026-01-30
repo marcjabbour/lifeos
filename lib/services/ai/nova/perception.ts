@@ -14,9 +14,14 @@ import {
   createTrace,
   flushLangfuse,
 } from "@/lib/services/ai/observability/langfuse";
-import type { PerceptionResult, LLMResponse } from "@/types/llm";
+import type {
+  PerceptionResult,
+  LLMResponse,
+  PerceiveParams,
+} from "@/types/llm";
 
-export type ContentType = "url" | "text" | "image";
+// Re-export ContentType from the shared PerceiveParams type
+export type ContentType = PerceiveParams["contentType"];
 
 export interface PerceiveInput {
   content: string;

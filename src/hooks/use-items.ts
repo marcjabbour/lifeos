@@ -20,6 +20,7 @@ export interface UseItemsReturn {
   loadMore: () => Promise<void>;
   refetch: () => Promise<void>;
   removeItem: (itemId: string) => void;
+  revertRemove: (itemId: string, item: Item) => void;
 }
 
 const DEFAULT_LIMIT = 20;
@@ -156,6 +157,28 @@ export function useItems(options: UseItemsOptions = {}): UseItemsReturn {
     setItems((prev) => prev.filter((item) => item.id !== itemId));
   }, []);
 
+  // Revert a removed item back into the list (used when delete fails)
+  const revertRemove = useCallback((itemId: string, item: Item) => {
+    setItems((prev) => {
+      // Check if item already exists (to avoid duplicates)
+      if (prev.some((i) => i.id === itemId)) {
+        return prev;
+      }
+      // Insert item at the correct position based on created_at (descending order)
+      const insertIndex = prev.findIndex(
+        (i) => new Date(i.created_at) < new Date(item.created_at),
+      );
+      if (insertIndex === -1) {
+        // Item is older than all items, add to end
+        return [...prev, item];
+      }
+      // Insert at the correct position
+      const newItems = [...prev];
+      newItems.splice(insertIndex, 0, item);
+      return newItems;
+    });
+  }, []);
+
   return {
     items,
     loading,
@@ -165,5 +188,6 @@ export function useItems(options: UseItemsOptions = {}): UseItemsReturn {
     loadMore,
     refetch,
     removeItem,
+    revertRemove,
   };
 }

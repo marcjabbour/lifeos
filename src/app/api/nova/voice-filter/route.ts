@@ -11,12 +11,14 @@ import {
   parseFilterIntent,
   getSuggestedCommands,
 } from "@/lib/services/ai/voice/filter-intent";
+import { answerQuestion } from "@/lib/services/ai/voice/question-answering";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 interface VoiceFilterRequest {
   command: string;
+  handleQuestions?: boolean; // If true, process questions and return answers directly
 }
 
 export async function POST(request: NextRequest) {
@@ -65,6 +67,22 @@ export async function POST(request: NextRequest) {
 
     // Parse the voice command into filter intent
     const intent = await parseFilterIntent(command);
+
+    // If this is a question and handleQuestions is enabled, process it with semantic search
+    if (intent.action === "question" && body.handleQuestions) {
+      const questionResult = await answerQuestion(command, user.id, supabase);
+
+      return NextResponse.json({
+        success: true,
+        intent,
+        originalCommand: command,
+        questionResult: {
+          answer: questionResult.answer,
+          items: questionResult.items,
+          confidence: questionResult.confidence,
+        },
+      });
+    }
 
     return NextResponse.json({
       success: true,

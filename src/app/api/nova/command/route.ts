@@ -14,6 +14,7 @@ import {
   parseFilterIntent,
   type FilterIntent,
 } from "@/lib/services/ai/voice/filter-intent";
+import { answerQuestion } from "@/lib/services/ai/voice/question-answering";
 
 export interface NovaCommandRequest {
   command: string;
@@ -79,6 +80,29 @@ async function handleCommand(
       const response: NovaClearResponse = {
         type: "clear",
         message: "Filters cleared! Showing all items.",
+      };
+      return NextResponse.json(response);
+    }
+
+    // Handle question commands with semantic search
+    if (intent.action === "question") {
+      const questionResult = await answerQuestion(
+        command,
+        context.userId,
+        context.supabase,
+      );
+
+      const response: NovaQueryResponse = {
+        type: "query",
+        answer: questionResult.answer,
+        items: questionResult.items.map((item) => ({
+          id: item.id,
+          title: item.title,
+          category: item.category,
+          url: item.url,
+          source_type: item.source_type,
+          created_at: item.created_at,
+        })),
       };
       return NextResponse.json(response);
     }

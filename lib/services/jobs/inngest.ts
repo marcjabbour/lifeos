@@ -27,7 +27,7 @@ export interface JobCreatedEvent {
     job_id: string;
     user_id: string;
     item_id: string;
-    content_type: "url" | "text" | "image";
+    content_type: "url" | "text" | "image" | "audio";
   };
 }
 

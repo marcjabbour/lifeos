@@ -20,7 +20,7 @@ const openai = new OpenAI({
 export interface FilterIntent {
   categories: TagCategory[];
   searchQuery?: string;
-  action: "filter" | "search" | "clear" | "unknown";
+  action: "filter" | "search" | "clear" | "question" | "unknown";
   confidence: number;
 }
 
@@ -141,6 +141,38 @@ const CATEGORY_KEYWORDS: Record<TagCategory, string[]> = {
 };
 
 /**
+ * Detect if a voice command is a question (vs a filter command)
+ *
+ * Questions typically:
+ * - Start with question words (what, which, how many, etc.)
+ * - Ask about specific information
+ * - End with a question mark
+ */
+export function isQuestion(command: string): boolean {
+  const normalizedCommand = command.toLowerCase().trim();
+
+  // Question word patterns
+  const questionPatterns = [
+    /^what\b/,
+    /^which\b/,
+    /^how many\b/,
+    /^how much\b/,
+    /^when\b/,
+    /^where\b/,
+    /^who\b/,
+    /^do i have\b/,
+    /^have i\b/,
+    /^did i\b/,
+    /^can you (tell|show|find|list)/,
+    /^tell me\b/,
+    /^list\b/,
+    /\?$/,
+  ];
+
+  return questionPatterns.some((pattern) => pattern.test(normalizedCommand));
+}
+
+/**
  * Parse a voice command into filter intent using AI
  */
 export async function parseFilterIntent(
@@ -159,6 +191,16 @@ export async function parseFilterIntent(
       categories: [],
       action: "clear",
       confidence: 0.95,
+    };
+  }
+
+  // Check if this is a question - questions get special handling
+  if (isQuestion(voiceCommand)) {
+    return {
+      categories: [],
+      searchQuery: voiceCommand,
+      action: "question",
+      confidence: 0.9,
     };
   }
 
@@ -307,10 +349,11 @@ export function getSuggestedCommands(): string[] {
   return [
     "Show me all food items",
     "Find tech and AI content",
-    "Search for restaurants",
+    "What restaurants have I saved?",
     "Show music stuff",
-    "Find travel destinations",
+    "How many travel items do I have?",
     "Show learning resources",
+    "What was the last thing I saved?",
     "Clear filters",
   ];
 }

@@ -22,6 +22,15 @@ import {
   formatClarificationRequest,
   type ClarificationOption,
 } from "@/lib/services/whatsapp";
+import {
+  transcribeAudio,
+  type TranscriptionResult,
+} from "@/lib/services/ai/audio";
+import {
+  trackEnrichment,
+  trackImageAnalysis,
+  trackCategorization,
+} from "@/lib/services/ai/nova/activity";
 
 interface ItemEnrichment {
   summary: string;
@@ -258,12 +267,65 @@ export const processContentJob = inngest.createFunction(
       }
     });
 
+    // Step 2.6: Transcribe audio content if this is audio
+    const audioTranscription = await step.run(
+      "transcribe-audio",
+      async (): Promise<TranscriptionResult | null> => {
+        if (content_type !== "audio") {
+          return null;
+        }
+
+        const audioUrl = item.url;
+        if (!audioUrl) {
+          console.log("[AudioTranscription] No audio URL found for item");
+          return null;
+        }
+
+        try {
+          console.log(
+            `[AudioTranscription] Starting transcription for: ${audioUrl.slice(0, 100)}...`,
+          );
+
+          const transcription = await transcribeAudio(audioUrl, {
+            userId: user_id,
+            itemId: item_id,
+          });
+
+          console.log(
+            `[AudioTranscription] Success: ${transcription.transcript.length} chars, ` +
+              `${transcription.duration?.toFixed(1) || "?"}s, lang=${transcription.language}`,
+          );
+
+          // Update item with transcription immediately
+          await supabase
+            .from("items")
+            .update({
+              content: transcription.transcript,
+              metadata: {
+                ...((item.metadata as Record<string, unknown>) || {}),
+                audio_duration: transcription.duration,
+                audio_language: transcription.language,
+                transcribed_at: new Date().toISOString(),
+              },
+            })
+            .eq("id", item_id);
+
+          return transcription;
+        } catch (error) {
+          console.error("[AudioTranscription] Failed:", error);
+          // Return null but don't fail the job - we can still process without transcription
+          return null;
+        }
+      },
+    );
+
     // Step 3: Process content with Nova AI perception
     const perception = await step.run("perceive-content", async () => {
       const startTime = Date.now();
 
       try {
         // For images, use the image analysis as content for perception
+        // For audio, use the transcription as content for perception
         let contentForPerception = item.content || item.url || "";
         let contextForPerception = item.title
           ? `Title: ${item.title}`
@@ -273,6 +335,14 @@ export const processContentJob = inngest.createFunction(
           // Use the image analysis as the content to perceive
           contentForPerception = imageAnalysis.description || "";
           contextForPerception = `This is an image analysis. Caption: ${item.metadata?.caption || "None"}. OCR Text: ${imageAnalysis.extractedText || "None"}`;
+        } else if (content_type === "audio" && audioTranscription) {
+          // Use the audio transcription as the content to perceive
+          contentForPerception = audioTranscription.transcript;
+          const duration = audioTranscription.duration
+            ? `${audioTranscription.duration.toFixed(1)}s`
+            : "unknown";
+          const language = audioTranscription.language || "unknown";
+          contextForPerception = `This is a transcribed voice message. Duration: ${duration}. Language: ${language}.`;
         }
 
         // Call the actual Nova perception engine
@@ -323,18 +393,25 @@ export const processContentJob = inngest.createFunction(
       } catch (error) {
         console.error("Perception failed:", error);
         // Return a basic fallback if AI fails
+        // Use transcription or image analysis if available
+        const fallbackSummary =
+          audioTranscription?.transcript ||
+          imageAnalysis?.description ||
+          item.title ||
+          `${content_type} content`;
+        const fallbackTitle =
+          content_type === "audio"
+            ? `Voice Message${audioTranscription?.duration ? ` (${Math.round(audioTranscription.duration)}s)` : ""}`
+            : imageAnalysis?.title;
         return {
-          summary:
-            imageAnalysis?.description ||
-            item.title ||
-            `${content_type} content`,
+          summary: fallbackSummary,
           contentType: content_type,
           confidence: 0.5,
           suggestedActions: ["save"],
           entities: [],
           topics: [],
           metadata: {},
-          title: imageAnalysis?.title,
+          title: fallbackTitle,
         } as PerceiveOutput;
       }
     });
@@ -625,10 +702,61 @@ export const processContentJob = inngest.createFunction(
 
       await supabase.from("items").update(updates).eq("id", item_id);
 
-      return { updated: true };
+      return { updated: true, category: updates.category, tags: updates.tags };
     });
 
-    // Step 6: Generate and store embedding
+    // Step 6.5: Track Nova activity for the enrichment
+    await step.run("track-nova-activity", async () => {
+      try {
+        // Track the main enrichment activity
+        await trackEnrichment({
+          userId: user_id,
+          itemId: item_id,
+          title: enrichment.title || item.title,
+          contentType: enrichment.content_type_detected || content_type,
+          summary: enrichment.summary,
+          topics: enrichment.topics,
+        });
+
+        // If we analyzed an image, also track that
+        if (content_type === "image" && imageAnalysis) {
+          await trackImageAnalysis({
+            userId: user_id,
+            itemId: item_id,
+            title: imageAnalysis.title || "Image",
+            description: imageAnalysis.description,
+          });
+        }
+
+        // If we auto-categorized, track that too
+        if (
+          perception.confidence &&
+          perception.confidence > 0.7 &&
+          item.category === "uncategorized"
+        ) {
+          const newCategory = mapContentTypeToCategory(
+            perception.contentType || content_type,
+          );
+          if (newCategory) {
+            await trackCategorization({
+              userId: user_id,
+              itemId: item_id,
+              title: enrichment.title || item.title,
+              category: newCategory,
+              tags: enrichment.topics?.slice(0, 5),
+            });
+          }
+        }
+
+        return { tracked: true };
+      } catch (error) {
+        // Don't fail the job if activity tracking fails
+        console.error("Failed to track Nova activity:", error);
+        return { tracked: false, error: String(error) };
+      }
+    });
+
+    // Step 7: Generate and store embedding
     const embeddingResult = await step.run("generate-embedding", async () => {
       try {
         // Prepare content for embedding
@@ -711,7 +839,7 @@ export const processContentJob = inngest.createFunction(
       }
     });
 
-    // Step 7: Complete job
+    // Step 8: Complete job
     const finalResult = await step.run("complete-job", async () => {
       const result = {
         perception: {
@@ -731,19 +859,20 @@ export const processContentJob = inngest.createFunction(
           status: "completed",
           result,
           completed_at: new Date().toISOString(),
-          current_step: 6,
+          current_step: 7,
           step_results: [
             { step: 1, action: "perceive", status: "completed" },
             { step: 2, action: "enrich", status: "completed" },
             { step: 3, action: "update_item", status: "completed" },
+            { step: 4, action: "track_activity", status: "completed" },
             {
-              step: 4,
+              step: 5,
               action: "generate_embedding",
               status: embeddingResult.embedding_generated
                 ? "completed"
                 : "skipped",
             },
-            { step: 5, action: "complete", status: "completed" },
+            { step: 6, action: "complete", status: "completed" },
           ],
         })
         .eq("id", job_id);
@@ -751,7 +880,7 @@ export const processContentJob = inngest.createFunction(
       return result;
     });
 
-    // Step 8: Send push notification (if subscriptions exist)
+    // Step 9: Send push notification (if subscriptions exist)
     await step.run("send-notification", async () => {
       // Check if user has push subscriptions
       const { data: subscriptions } = await supabase
@@ -1116,6 +1245,11 @@ function mapContentTypeToCategory(contentType: string): string | null {
     product: "shopping",
     podcast: "audio",
     music: "audio",
+    // Audio/voice content types
+    audio: "audio",
+    voice: "audio",
+    voice_message: "audio",
+    voicenote: "audio",
     // New content types
     restaurant: "food",
     place: "places",

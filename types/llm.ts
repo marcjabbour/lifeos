@@ -87,7 +87,7 @@ export type TaskType =
 // Perception params and result
 export interface PerceiveParams {
   content: string;
-  contentType: "url" | "text" | "image";
+  contentType: "url" | "text" | "image" | "audio";
   context?: string;
 }
 

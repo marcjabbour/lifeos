@@ -37,8 +37,12 @@ This project is organized into **4 parallel workstreams** with clear sync points
 | **AI/LLM Integration** | 10/10 | Complete |
 | **Real-time & PWA** | 8/8 | Complete |
 | **Integration & Polish** | 5/6 | In Progress |
+| **Enhancement Phase 1: Bug Fixes** | 0/3 | Not Started |
+| **Enhancement Phase 2: Core Features** | 0/2 | Not Started |
+| **Enhancement Phase 3: Nova Intelligence** | 0/2 | Not Started |
+| **Enhancement Phase 4: Navigation** | 1/1 | Complete |
 
-**Overall:** 38/39 tasks complete (97%)
+**Overall:** 39/53 tasks complete (74%)
 
 ---
 
@@ -1300,13 +1304,404 @@ feat/task-506-launch-readiness
 
 ---
 
+# Workstream 6: Enhancement Phase 1 - Bug Fixes (Critical)
+
+**Branch:** `feat/enhancement-phase1-bug-fixes`
+**Status:** Not Started
+**Target Duration:** 1 day
+**Dependencies:** None
+**Parallelizable:** Yes
+
+Bug fixes for delete functionality and content processing (audio/image).
+
+---
+
+### TASK-601: Fix Delete Items Functionality
+
+**Status:** [ ] Not Started
+**Workstream:** Enhancement Phase 1
+**Dependencies:** None
+**Branch:** `feat/task-601-delete-revert`
+
+**Description:**
+Fix the delete items bug where items disappear then reappear. Root cause is missing error handling and revert logic when DELETE API call fails.
+
+**Acceptance Criteria:**
+- [ ] Add `revertRemove(itemId, item)` function to `useItems` hook
+- [ ] Update `handleDeleteConfirm` in items-feed.tsx to catch API errors
+- [ ] On DELETE failure: revert item to list at correct position
+- [ ] Show error toast when delete fails
+- [ ] Verify auth token is included in DELETE request headers
+- [ ] Test: Create item → Delete → Kill network → Verify revert and error message
+- [ ] Verify is_archived=true in database after successful delete
+
+**Files to Modify:**
+- `src/components/feed/items-feed.tsx` - Add error handling to delete handler
+- `src/hooks/use-items.ts` - Add revertRemove() function
+
+---
+
+### TASK-602: Add Audio Transcription with Whisper API
+
+**Status:** [ ] Not Started
+**Workstream:** Enhancement Phase 1
+**Dependencies:** None (precedes orchestrator)
+**Branch:** `feat/task-602-whisper-transcription`
+
+**Description:**
+Implement Whisper API transcription for audio content. Currently audio detection exists but no transcription implementation.
+
+**Acceptance Criteria:**
+- [ ] Create `lib/services/ai/audio/transcription.ts` with `transcribeAudio()` function
+- [ ] Function accepts audioUrl (string) and returns {transcript, duration, language}
+- [ ] Fetch audio from URL, convert to File object, call OpenAI Whisper API
+- [ ] Use response_format: "verbose_json" to get metadata (duration, language)
+- [ ] Add error handling with meaningful error messages
+- [ ] Update Inngest job in `lib/services/jobs/functions.ts` to call transcribeAudio for audio content
+- [ ] Test: Send audio via WhatsApp → Verify transcription appears in item content
+- [ ] Add Langfuse tracing: log transcription call with tokens and latency
+
+**Files to Create:**
+- `lib/services/ai/audio/transcription.ts` - Whisper transcription service
+
+**Files to Modify:**
+- `lib/services/jobs/functions.ts` - Call transcribeAudio in processContentJob
+- `lib/services/whatsapp/message-parser.ts` - Verify audio URL extraction
+
+---
+
+### TASK-603: Fix Image Processing Flow
+
+**Status:** [ ] Not Started
+**Workstream:** Enhancement Phase 1
+**Dependencies:** TASK-602 (audio should be done first)
+**Branch:** `feat/task-603-image-processing-fix`
+
+**Description:**
+Debug and fix image processing. GPT-4o Vision analysis code exists but may not be triggered correctly. Add logging and ensure image flow works end-to-end.
+
+**Acceptance Criteria:**
+- [ ] Review `processContentJob` in functions.ts to trace image handling
+- [ ] Add detailed console logging at each step: content_type check, vision API call, result storage
+- [ ] Verify GPT-4o Vision is called for content_type=image
+- [ ] Test image with various formats: JPEG, PNG, WebP
+- [ ] Verify vision analysis result stored in item.enrichment
+- [ ] Test: Send image via WhatsApp → Verify analysis in item detail modal
+- [ ] Add Langfuse spans: image analysis calls with tokens, latency, cost
+- [ ] Verify error handling: failed image analysis doesn't block item creation
+
+**Files to Modify:**
+- `lib/services/jobs/functions.ts` - Add logging, debug image flow
+- `lib/services/ai/vision/index.ts` (if exists) or create vision handler
+
+---
+
+# Workstream 7: Enhancement Phase 2 - Core Features
+
+**Branch:** `feat/enhancement-phase2-core-features`
+**Status:** Not Started
+**Target Duration:** 2-3 days
+**Dependencies:** Phase 1 partially (not blocking)
+**Parallelizable:** Tasks 7A and 7B can be done in parallel until orchestrator depends on audio/image fixes
+
+---
+
+### TASK-701: Make Cards Editable
+
+**Status:** [ ] Not Started
+**Workstream:** Enhancement Phase 2
+**Dependencies:** None (can run parallel to orchestrator setup)
+**Branch:** `feat/task-701-card-editing`
+
+**Description:**
+Add edit mode to ItemDetailModal with form for editing title, content, category, tags, URL, and thumbnail.
+
+**Acceptance Criteria:**
+- [ ] Add "Edit" button to ItemDetailModal component
+- [ ] Create `src/components/feed/item-edit-form.tsx` component with fields:
+  - title (text input)
+  - content (textarea)
+  - category (dropdown/select)
+  - tags (multi-select/tag input)
+  - url (text input, optional)
+  - thumbnail_url (text input, optional)
+- [ ] Wire form to PATCH /api/items/:id endpoint
+- [ ] Add optimistic update to useItems hook
+- [ ] Add cancel/save buttons with loading states
+- [ ] Show error toast on save failure with revert
+- [ ] Add form validation: title required, max 255 chars
+- [ ] Test: Edit item → Save → Verify persisted in DB and UI updated
+
+**Files to Create:**
+- `src/components/feed/item-edit-form.tsx` - Edit form component
+
+**Files to Modify:**
+- `src/components/feed/item-detail-modal.tsx` - Add edit mode toggle and button
+- `src/hooks/use-items.ts` - Add updateItem() function with optimistic update
+
+---
+
+### TASK-702: Google ADK Orchestrator Architecture Setup
+
+**Status:** [ ] Not Started
+**Workstream:** Enhancement Phase 2
+**Dependencies:** TASK-602, TASK-603 (audio/image fixes must be complete)
+**Branch:** `feat/task-702-adk-orchestrator`
+
+**Description:**
+Implement multi-agent orchestrator pipeline (InputAnalyzer → ActionDecider → ActionExecutor) using Google ADK for content processing with clear separation of concerns.
+
+**Acceptance Criteria:**
+- [ ] Create `lib/services/ai/agents/` directory structure:
+  - config.ts - Agent configuration
+  - orchestrator.ts - SequentialAgent pipeline
+  - input-analyzer/ - Detects type, extracts text from image/audio
+  - action-decider/ - Classifies intent, decides action, fetches URLs
+  - action-executor/ - Creates items, generates embeddings
+- [ ] InputAnalyzer agent (GPT-4o-mini):
+  - Tools: vision-tool.ts (GPT-4o Vision), transcription.ts (Whisper)
+  - Output: normalized content with detected type
+- [ ] ActionDecider agent (GPT-4o):
+  - Tools: web-fetch.ts (URL fetch), web-search.ts (Tavily)
+  - Output: classification, intent, required actions
+- [ ] ActionExecutor agent (GPT-4o-mini):
+  - Tools: item-creator.ts (DB ops), embedding.ts (vector embeddings)
+  - Output: created items, embeddings stored
+- [ ] Create new `orchestratedProcessingJob` Inngest function
+- [ ] Add feature flag `USE_ADK_ORCHESTRATOR` for gradual rollout
+- [ ] Maintain backward compatibility with existing `processContentJob`
+- [ ] Test end-to-end: Send content → Verify 3-agent pipeline in Langfuse
+- [ ] Add comprehensive logging at each agent handoff
+
+**Files to Create:**
+- `lib/services/ai/agents/config.ts` - Agent configuration
+- `lib/services/ai/agents/orchestrator.ts` - Orchestrator pipeline
+- `lib/services/ai/agents/input-analyzer/index.ts`
+- `lib/services/ai/agents/input-analyzer/prompts.ts`
+- `lib/services/ai/agents/input-analyzer/tools/vision-tool.ts`
+- `lib/services/ai/agents/input-analyzer/tools/transcription.ts`
+- `lib/services/ai/agents/action-decider/index.ts`
+- `lib/services/ai/agents/action-decider/prompts.ts`
+- `lib/services/ai/agents/action-decider/tools/web-fetch.ts`
+- `lib/services/ai/agents/action-decider/tools/web-search.ts`
+- `lib/services/ai/agents/action-executor/index.ts`
+- `lib/services/ai/agents/action-executor/prompts.ts`
+- `lib/services/ai/agents/action-executor/tools/item-creator.ts`
+- `lib/services/ai/agents/action-executor/tools/embedding.ts`
+
+**Files to Modify:**
+- `lib/services/jobs/functions.ts` - Add orchestratedProcessingJob, integrate feature flag
+- `lib/env.ts` - Add USE_ADK_ORCHESTRATOR feature flag
+
+---
+
+# Workstream 8: Enhancement Phase 3 - Nova Intelligence
+
+**Branch:** `feat/enhancement-phase3-nova-intelligence`
+**Status:** Not Started
+**Target Duration:** 1-2 days
+**Dependencies:** Minimal (can start early)
+**Parallelizable:** Yes, both tasks independent
+
+---
+
+### TASK-801: Fix Nova's Insights with Real Data
+
+**Status:** [ ] Not Started
+**Workstream:** Enhancement Phase 3
+**Dependencies:** None (independent)
+**Branch:** `feat/task-801-nova-insights-realdata`
+
+**Description:**
+Replace hardcoded mock data in insights widgets with real activity data from nova_activity table.
+
+**Acceptance Criteria:**
+- [ ] Query `nova_activity` table in GET /api/nova/activity route
+- [ ] Filter by user_id and recent timeframe (last 24 hours)
+- [ ] Sort by created_at DESC, limit 10 activities
+- [ ] Update `widgets-container.tsx` to fetch from API on mount
+- [ ] Update `nova-activity-modal.tsx` to display real data
+- [ ] Add loading skeleton states while fetching
+- [ ] Add error handling and retry logic
+- [ ] Format activity timestamps relative (2 hours ago, etc.)
+- [ ] Track Nova actions during content processing: insert into nova_activity table
+- [ ] Test: Process content → Check widget shows real activity → Verify in DB
+
+**Files to Modify:**
+- `src/app/api/nova/activity/route.ts` - Query real data from DB
+- `src/components/layout/widgets-container.tsx` - Fetch real data on mount
+- `src/components/layout/nova-activity-modal.tsx` - Display real data
+- `lib/services/jobs/functions.ts` - Insert activity records during processing
+
+---
+
+### TASK-802: Enhanced Voice Agent with Q&A
+
+**Status:** [ ] Not Started
+**Workstream:** Enhancement Phase 3
+**Dependencies:** None (independent, but benefits from Task 801)
+**Branch:** `feat/task-802-voice-qa`
+
+**Description:**
+Enhance voice agent to answer questions about item contents using semantic search, not just filter commands.
+
+**Acceptance Criteria:**
+- [ ] Create `lib/services/ai/voice/question-answering.ts` with semantic search + answer generation
+- [ ] Detect if voice input is filter command (existing) or question
+- [ ] For questions: generate embedding of query
+- [ ] Search item embeddings table for top-5 relevant items (threshold 0.7)
+- [ ] Pass matched items + query to GPT-4o to generate answer
+- [ ] Response format: natural language answer + list of relevant items
+- [ ] Update items-feed.tsx to handle question responses in QueryResultModal
+- [ ] Add "Ask Nova" button/voice trigger on main feed
+- [ ] Test: Say "what restaurants did I save?" → Get relevant answer from items
+- [ ] Add Langfuse tracing: query embedding, search results, answer generation
+
+**Files to Create:**
+- `lib/services/ai/voice/question-answering.ts` - Q&A with semantic search
+
+**Files to Modify:**
+- `lib/services/ai/voice/filter-intent.ts` - Add question detection
+- `src/components/feed/items-feed.tsx` - Handle question responses
+
+---
+
+# Workstream 9: Enhancement Phase 4 - Navigation & Placeholders
+
+**Branch:** `feat/enhancement-phase4-nav-placeholders`
+**Status:** Not Started
+**Target Duration:** 0.5 day
+**Dependencies:** None
+**Parallelizable:** Yes (all pages independent)
+
+---
+
+### TASK-901: Create Coming Soon Placeholder Pages
+
+**Status:** [x] Complete
+**Workstream:** Enhancement Phase 4
+**Dependencies:** None (can run in parallel)
+**Branch:** `feat/task-901-coming-soon-pages`
+
+**Description:**
+Create placeholder "Coming Soon" pages for missing routes: /notes, /timeline, /analytics, /collections, /settings, /notifications.
+
+**Acceptance Criteria:**
+- [x] Create `src/components/ui/coming-soon.tsx` component with:
+  - Feature name prop
+  - Consistent styling (centered, dark theme)
+  - Optional description/teaser text
+  - Optional icon specific to feature
+- [x] Create route pages:
+  - `src/app/notes/page.tsx`
+  - `src/app/timeline/page.tsx`
+  - `src/app/analytics/page.tsx`
+  - `src/app/collections/page.tsx`
+  - `src/app/settings/page.tsx`
+  - `src/app/notifications/page.tsx`
+- [x] Each page exports ComingSoon component with appropriate feature name
+- [x] Test navigation: all links accessible from sidebar/mobile nav
+- [x] Verify responsive layout on mobile and desktop
+- [x] All pages follow design system styling
+
+**Files Created:**
+- `src/components/ui/coming-soon.tsx` - Shared component with animated badge
+- `src/app/notes/page.tsx`
+- `src/app/timeline/page.tsx`
+- `src/app/analytics/page.tsx`
+- `src/app/collections/page.tsx`
+- `src/app/settings/page.tsx`
+- `src/app/notifications/page.tsx`
+
+---
+
+# Enhancement Parallelization Strategy
+
+## Phase 1: Bug Fixes (All Parallel)
+These three tasks are completely independent and can be worked on simultaneously:
+- **TASK-601** (Delete revert) - No dependencies
+- **TASK-602** (Whisper) - No dependencies
+- **TASK-603** (Image fix) - Needs 602 done first, can start after 602 is ~80% done
+
+**Recommended Assignment:**
+- Claude Instance A: TASK-601
+- Claude Instance B: TASK-602
+- Claude Instance C: TASK-603 (start after B ~80%)
+
+## Phase 2: Core Features
+**TASK-701** (Card editing) can proceed in parallel with most of TASK-702:
+- **TASK-701** - Independent, quick (2-3 hours)
+- **TASK-702** - Depends on Phase 1 completion (TASK-602, TASK-603)
+
+**Recommended Assignment:**
+- Claude Instance A: TASK-701 (start immediately)
+- Claude Instance B+C: TASK-702 setup (after Phase 1 complete)
+
+## Phase 3: Nova Intelligence (All Parallel)
+Both tasks are independent:
+- **TASK-801** (Insights real data) - Can start anytime
+- **TASK-802** (Voice Q&A) - Can start anytime
+
+**Recommended Assignment:**
+- Claude Instance A: TASK-801
+- Claude Instance B: TASK-802
+
+## Phase 4: Navigation (Parallel)
+All pages are independent but can be done by single instance quickly:
+- **TASK-901** - Can be done in parallel after Phases 1-3 or on separate instance
+
+---
+
+# Enhancement Critical Path
+
+```
+Phase 1 (1 day):
+  ├─ TASK-601 (Delete fix)           [Parallel A] 1-2 hours
+  ├─ TASK-602 (Whisper)              [Parallel B] 2-3 hours
+  └─ TASK-603 (Image fix)            [Parallel C] 1-2 hours (starts after 602)
+        ↓ (blocks Phase 2 task)
+
+Phase 2 (2-3 days):
+  ├─ TASK-701 (Card edit)            [Parallel A] 2-3 hours (can start immediately)
+  └─ TASK-702 (Orchestrator)         [Parallel B] 4-6 hours (starts after Phase 1)
+        ↓ (blocks future agent work)
+
+Phase 3 (1-2 days - can start after Phase 1):
+  ├─ TASK-801 (Nova insights)        [Parallel A] 2 hours
+  └─ TASK-802 (Voice Q&A)            [Parallel B] 2-3 hours
+
+Phase 4 (0.5 day):
+  └─ TASK-901 (Placeholder pages)    [Any] 1 hour
+
+Total: ~4-5 days if fully parallelized, ~2 days critical path
+```
+
+---
+
+## Branch Naming Convention (Enhancement Tasks)
+
+All enhancement branches follow:
+```
+feat/task-XXX-brief-description
+
+Example:
+feat/task-601-delete-revert
+feat/task-702-adk-orchestrator
+feat/task-901-coming-soon-pages
+```
+
+---
+
 ## Notes
 
-- **Parallel execution:** Teams can work independently on Terminals 1-4 until sync points
-- **Small, completable tasks:** Each task targets 1-4 hours of focused work
+- **Parallel execution:** All Phase 1 tasks can be done simultaneously by separate Claude instances
+- **Blocking dependencies:** Phase 1 (bug fixes) should be complete before starting Phase 2 (orchestrator)
+- **Independent workstreams:** Phase 3 (Nova Intelligence) and Phase 4 (Navigation) can start immediately
+- **Feature flags:** Use `USE_ADK_ORCHESTRATOR` flag to gradually roll out orchestrator while maintaining backward compatibility
+- **Small, completable tasks:** Each enhancement task targets 1-6 hours of focused work
 - **Clear acceptance criteria:** Know when task is done
-- **Regular sync meetings:** Check blockers at sync points
-- **Leverage architecture docs:** Reference ARCHITECTURE.md and AI-ARCHITECTURE.md for implementation details
+- **Leverage existing code:** Audio/image processing partially exists, just needs completion
+- **Iterate quickly:** Bug fixes should be completed first (quick wins), then features
 
 ---
 
@@ -1320,3 +1715,13 @@ feat/task-506-launch-readiness
 | [?] | Blocked |
 
 Update status during daily standups. Move items to "In Progress" when starting work.
+
+---
+
+## Notes
+
+- **Parallel execution:** Teams can work independently on Terminals 1-4 until sync points
+- **Small, completable tasks:** Each task targets 1-4 hours of focused work
+- **Clear acceptance criteria:** Know when task is done
+- **Regular sync meetings:** Check blockers at sync points
+- **Leverage architecture docs:** Reference ARCHITECTURE.md and AI-ARCHITECTURE.md for implementation details
