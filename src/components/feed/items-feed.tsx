@@ -22,6 +22,7 @@ import { Button, ConfirmDialog, useToastActions } from "@/components/ui";
 import { NovaIcon } from "@/components/icons";
 import { FilterContext } from "@/contexts/FilterContext";
 import { useItems } from "@/hooks/use-items";
+import { getSupabase } from "@/lib/core/database/client";
 import type { Item } from "@/types/database";
 
 // Types
@@ -163,6 +164,8 @@ export function ItemsFeed() {
     loadMore,
     removeItem,
     revertRemove,
+    updateItem,
+    getItemById,
   } = useItems({
     categories: activeCategories,
     searchQuery,
@@ -260,10 +263,22 @@ export function ItemsFeed() {
     setSeenItemIds((prev) => new Set(prev).add(itemId));
 
     try {
+      // Get auth token for the request
+      const supabase = getSupabase();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
       // Persist to backend
       await fetch("/api/feed/seen", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
+        credentials: "include",
         body: JSON.stringify({ itemId }),
       });
     } catch (error) {
@@ -303,13 +318,29 @@ export function ItemsFeed() {
     setItemToDelete(null);
 
     try {
+      // Get auth token for the request
+      const supabase = getSupabase();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const headers: HeadersInit = {};
+      if (session?.access_token) {
+        headers["Authorization"] = `Bearer ${session.access_token}`;
+      }
+
       // Persist to backend (soft delete / archive)
       const response = await fetch(`/api/items/${itemId}`, {
         method: "DELETE",
+        credentials: "include",
+        headers,
       });
 
       if (!response.ok) {
-        throw new Error(`Delete failed with status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.error || `Delete failed with status: ${response.status}`,
+        );
       }
     } catch (error) {
       console.error("Failed to delete item:", error);
@@ -555,8 +586,10 @@ export function ItemsFeed() {
       {/* Item Detail Modal */}
       <ItemDetailModal
         item={selectedItem}
+        dbItem={selectedItem ? getItemById(selectedItem.id) : null}
         isOpen={isModalOpen}
         onClose={handleCloseModal}
+        onItemUpdate={updateItem}
       />
 
       {/* Query Result Modal (from Nova commands) */}

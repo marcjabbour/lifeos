@@ -156,6 +156,7 @@ export type UserIntent =
   | { type: "command"; command: string; args: string }
   | { type: "save_link"; url: string; note?: string }
   | { type: "save_image"; mediaUrl: string; caption?: string }
+  | { type: "save_audio"; mediaUrl: string; caption?: string }
   | { type: "save_text"; text: string }
   | { type: "query"; question: string }
   | { type: "clarification_response"; selection: number | string }
@@ -202,6 +203,15 @@ export function detectIntent(message: ParsedMessage): UserIntent {
   if (message.messageType === "image" && message.mediaUrl) {
     return {
       type: "save_image",
+      mediaUrl: message.mediaUrl,
+      caption: body || undefined,
+    };
+  }
+
+  // Check for audio/voice messages
+  if (message.messageType === "audio" && message.mediaUrl) {
+    return {
+      type: "save_audio",
       mediaUrl: message.mediaUrl,
       caption: body || undefined,
     };

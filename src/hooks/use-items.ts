@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { getSupabase } from "@/lib/core/database/client";
-import type { Item } from "@/types/database";
+import type { Item, UpdateItemRequest } from "@/types/database";
 import type { TagCategory } from "@/lib/services/ai/embeddings/tags";
 
 export interface UseItemsOptions {
@@ -21,6 +21,8 @@ export interface UseItemsReturn {
   refetch: () => Promise<void>;
   removeItem: (itemId: string) => void;
   revertRemove: (itemId: string, item: Item) => void;
+  updateItem: (itemId: string, updates: UpdateItemRequest) => Promise<Item>;
+  getItemById: (itemId: string) => Item | undefined;
 }
 
 const DEFAULT_LIMIT = 20;
@@ -179,6 +181,84 @@ export function useItems(options: UseItemsOptions = {}): UseItemsReturn {
     });
   }, []);
 
+  // Update an item with optimistic update and revert on error
+  const updateItem = useCallback(
+    async (itemId: string, updates: UpdateItemRequest): Promise<Item> => {
+      // Find the original item for potential revert
+      const originalItem = items.find((i) => i.id === itemId);
+
+      if (!originalItem) {
+        throw new Error("Item not found");
+      }
+
+      // Optimistic update - apply changes immediately to UI
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === itemId
+            ? {
+                ...item,
+                ...updates,
+                updated_at: new Date().toISOString(),
+              }
+            : item,
+        ),
+      );
+
+      try {
+        // Get auth token for the request
+        const supabase = getSupabase();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const headers: HeadersInit = { "Content-Type": "application/json" };
+        if (session?.access_token) {
+          headers["Authorization"] = `Bearer ${session.access_token}`;
+        }
+
+        // Make the API call
+        const response = await fetch(`/api/items/${itemId}`, {
+          method: "PATCH",
+          headers,
+          credentials: "include",
+          body: JSON.stringify(updates),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            errorData.error || `Update failed: ${response.status}`,
+          );
+        }
+
+        const updatedItem = (await response.json()) as Item;
+
+        // Update with the server response (ensures we have the correct data)
+        setItems((prev) =>
+          prev.map((item) => (item.id === itemId ? updatedItem : item)),
+        );
+
+        return updatedItem;
+      } catch (error) {
+        // Revert to original item on error
+        setItems((prev) =>
+          prev.map((item) => (item.id === itemId ? originalItem : item)),
+        );
+
+        throw error;
+      }
+    },
+    [items],
+  );
+
+  // Get a single item by ID from the current list
+  const getItemById = useCallback(
+    (itemId: string): Item | undefined => {
+      return items.find((item) => item.id === itemId);
+    },
+    [items],
+  );
+
   return {
     items,
     loading,
@@ -189,5 +269,7 @@ export function useItems(options: UseItemsOptions = {}): UseItemsReturn {
     refetch,
     removeItem,
     revertRemove,
+    updateItem,
+    getItemById,
   };
 }

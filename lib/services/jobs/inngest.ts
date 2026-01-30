@@ -60,9 +60,20 @@ export interface JobFailedEvent {
   };
 }
 
+export interface JobOrchestratedEvent {
+  name: "lifeos/job.orchestrated";
+  data: {
+    job_id: string;
+    user_id: string;
+    item_id: string;
+    content_type: "url" | "text" | "image" | "audio";
+  };
+}
+
 // Union type for all events
 export type LifeOSEvent =
   | JobCreatedEvent
   | JobStepCompletedEvent
   | JobCompletedEvent
-  | JobFailedEvent;
+  | JobFailedEvent
+  | JobOrchestratedEvent;

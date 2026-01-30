@@ -31,6 +31,17 @@ import {
   trackImageAnalysis,
   trackCategorization,
 } from "@/lib/services/ai/nova/activity";
+import {
+  createTrace,
+  flushLangfuse,
+} from "@/lib/services/ai/observability/langfuse";
+import {
+  runOrchestratorPipeline,
+  isOrchestratorEnabled,
+  shouldUseOrchestrator,
+  type OrchestratorInput,
+  type ContentType as OrchestratorContentType,
+} from "@/lib/services/ai/agents";
 
 interface ItemEnrichment {
   summary: string;
@@ -244,25 +255,57 @@ export const processContentJob = inngest.createFunction(
 
     // Step 2.5: Analyze image content if this is an image
     const imageAnalysis = await step.run("analyze-image", async () => {
+      console.log(
+        `[ImageAnalysis] Step started - content_type: "${content_type}", item_id: ${item_id}`,
+      );
+
       if (content_type !== "image") {
+        console.log(
+          `[ImageAnalysis] Skipping - content_type is "${content_type}", not "image"`,
+        );
         return null;
       }
 
       const imageUrl = item.url;
+      console.log(
+        `[ImageAnalysis] Image URL from item: ${imageUrl ? imageUrl.slice(0, 100) + "..." : "NONE"}`,
+      );
+
       if (!imageUrl) {
+        console.log("[ImageAnalysis] No image URL found in item - skipping");
         return null;
       }
 
       try {
+        console.log(
+          `[ImageAnalysis] Calling analyzeImage() with URL: ${imageUrl.slice(0, 100)}...`,
+        );
         const analysis = await analyzeImage(imageUrl, user_id);
+
         if (analysis) {
           console.log(
-            `[ImageAnalysis] Analyzed image: ${analysis.description?.slice(0, 100)}...`,
+            `[ImageAnalysis] SUCCESS - Title: "${analysis.title}", Description: ${analysis.description?.slice(0, 100)}...`,
           );
+          console.log(
+            `[ImageAnalysis] Extracted text: ${analysis.extractedText?.slice(0, 100) || "None"}`,
+          );
+          console.log(
+            `[ImageAnalysis] Topics: ${analysis.topics?.join(", ") || "None"}`,
+          );
+          console.log(
+            `[ImageAnalysis] Content type detected: ${analysis.contentType || "Unknown"}`,
+          );
+        } else {
+          console.log("[ImageAnalysis] analyzeImage() returned null");
         }
+
         return analysis;
       } catch (error) {
-        console.error("[ImageAnalysis] Failed:", error);
+        console.error("[ImageAnalysis] FAILED with error:", error);
+        console.error(
+          "[ImageAnalysis] Error details:",
+          error instanceof Error ? error.message : String(error),
+        );
         return null;
       }
     });
@@ -1143,15 +1186,44 @@ async function analyzeImage(
   imageUrl: string,
   userId?: string,
 ): Promise<ImageAnalysisResult | null> {
+  const startTime = Date.now();
+  console.log(`[ImageAnalysis:analyzeImage] === START ===`);
+  console.log(`[ImageAnalysis:analyzeImage] Image URL: ${imageUrl}`);
+  console.log(
+    `[ImageAnalysis:analyzeImage] User ID: ${userId || "not provided"}`,
+  );
+
+  // Create Langfuse trace for observability
+  const trace = createTrace("image_analysis", {
+    userId,
+    requestType: "perception",
+    model: "gpt-4o",
+  });
+  const span = trace.span("analyze_image_vision");
+
   try {
+    // Check if OpenAI API key is configured
+    if (!process.env.OPENAI_API_KEY) {
+      console.error(
+        "[ImageAnalysis:analyzeImage] ERROR: OPENAI_API_KEY is not set!",
+      );
+      span.error(new Error("OPENAI_API_KEY not configured"));
+      await flushLangfuse();
+      return null;
+    }
+    console.log(
+      `[ImageAnalysis:analyzeImage] OpenAI API key is configured (length: ${process.env.OPENAI_API_KEY.length})`,
+    );
+
     const OpenAI = (await import("openai")).default;
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
-
     console.log(
-      `[ImageAnalysis] Analyzing image from: ${imageUrl.slice(0, 50)}...`,
+      "[ImageAnalysis:analyzeImage] OpenAI client created successfully",
     );
+
+    console.log("[ImageAnalysis:analyzeImage] Calling GPT-4o Vision API...");
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
@@ -1192,35 +1264,146 @@ Be specific and helpful. If this looks like a screenshot of something the user w
       ],
     });
 
+    const apiDuration = Date.now() - startTime;
+    console.log(
+      `[ImageAnalysis:analyzeImage] GPT-4o Vision API call completed in ${apiDuration}ms`,
+    );
+    console.log(
+      `[ImageAnalysis:analyzeImage] Response choices: ${response.choices?.length || 0}`,
+    );
+    console.log(
+      `[ImageAnalysis:analyzeImage] Usage: ${JSON.stringify(response.usage || {})}`,
+    );
+
     const content = response.choices[0]?.message?.content;
     if (!content) {
-      console.error("[ImageAnalysis] No content in response");
+      console.error(
+        "[ImageAnalysis:analyzeImage] ERROR: No content in response",
+      );
+      console.error(
+        `[ImageAnalysis:analyzeImage] Full response: ${JSON.stringify(response.choices[0])}`,
+      );
       return null;
     }
+
+    console.log(
+      `[ImageAnalysis:analyzeImage] Raw response content (first 500 chars): ${content.slice(0, 500)}`,
+    );
+    console.log(
+      `[ImageAnalysis:analyzeImage] Response content length: ${content.length} chars`,
+    );
 
     // Parse the JSON response
     try {
       // Handle cases where the response might have markdown code blocks
       let jsonContent = content;
       if (content.includes("```json")) {
+        console.log(
+          "[ImageAnalysis:analyzeImage] Detected ```json code block, stripping...",
+        );
         jsonContent = content.replace(/```json\n?/g, "").replace(/```\n?/g, "");
       } else if (content.includes("```")) {
+        console.log(
+          "[ImageAnalysis:analyzeImage] Detected ``` code block, stripping...",
+        );
         jsonContent = content.replace(/```\n?/g, "");
       }
 
+      console.log(
+        `[ImageAnalysis:analyzeImage] Attempting to parse JSON: ${jsonContent.slice(0, 200)}...`,
+      );
       const result = JSON.parse(jsonContent.trim()) as ImageAnalysisResult;
-      console.log(`[ImageAnalysis] Successfully analyzed: ${result.title}`);
+
+      const totalDuration = Date.now() - startTime;
+      console.log(
+        `[ImageAnalysis:analyzeImage] === SUCCESS === (total: ${totalDuration}ms)`,
+      );
+      console.log(
+        `[ImageAnalysis:analyzeImage] Result title: "${result.title}"`,
+      );
+      console.log(
+        `[ImageAnalysis:analyzeImage] Result description: ${result.description?.slice(0, 100)}...`,
+      );
+      console.log(
+        `[ImageAnalysis:analyzeImage] Extracted text: ${result.extractedText ? "Yes (" + result.extractedText.length + " chars)" : "No"}`,
+      );
+      console.log(
+        `[ImageAnalysis:analyzeImage] Topics: ${result.topics?.join(", ") || "None"}`,
+      );
+      console.log(
+        `[ImageAnalysis:analyzeImage] Content type: ${result.contentType || "Not specified"}`,
+      );
+      console.log(
+        `[ImageAnalysis:analyzeImage] Entities: ${result.entities?.join(", ") || "None"}`,
+      );
+
+      // Track success in Langfuse
+      span.end({
+        output: result,
+        usage: response.usage
+          ? {
+              inputTokens: response.usage.prompt_tokens || 0,
+              outputTokens: response.usage.completion_tokens || 0,
+              totalTokens: response.usage.total_tokens || 0,
+            }
+          : undefined,
+      });
+      await flushLangfuse();
+
       return result;
     } catch (parseError) {
-      console.error("[ImageAnalysis] Failed to parse response:", parseError);
+      console.error(
+        "[ImageAnalysis:analyzeImage] JSON parse FAILED:",
+        parseError,
+      );
+      console.error(
+        `[ImageAnalysis:analyzeImage] Content that failed to parse: ${content}`,
+      );
       // Return a basic result with the raw description
-      return {
+      console.log(
+        "[ImageAnalysis:analyzeImage] Returning fallback result with raw description",
+      );
+
+      // Track partial success (parsed failed but got response)
+      const fallbackResult = {
         description: content,
         title: "Analyzed Image",
       };
+      span.end({
+        output: { ...fallbackResult, parseError: true },
+        usage: response.usage
+          ? {
+              inputTokens: response.usage.prompt_tokens || 0,
+              outputTokens: response.usage.completion_tokens || 0,
+              totalTokens: response.usage.total_tokens || 0,
+            }
+          : undefined,
+      });
+      await flushLangfuse();
+
+      return fallbackResult;
     }
   } catch (error) {
-    console.error("[ImageAnalysis] Failed:", error);
+    const totalDuration = Date.now() - startTime;
+    console.error(
+      `[ImageAnalysis:analyzeImage] === FAILED === (after ${totalDuration}ms)`,
+    );
+    console.error("[ImageAnalysis:analyzeImage] Error:", error);
+    if (error instanceof Error) {
+      console.error("[ImageAnalysis:analyzeImage] Error name:", error.name);
+      console.error(
+        "[ImageAnalysis:analyzeImage] Error message:",
+        error.message,
+      );
+      console.error("[ImageAnalysis:analyzeImage] Error stack:", error.stack);
+
+      // Track error in Langfuse
+      span.error(error);
+    } else {
+      span.error(new Error(String(error)));
+    }
+    await flushLangfuse();
+
     return null;
   }
 }
@@ -1264,6 +1447,250 @@ function mapContentTypeToCategory(contentType: string): string | null {
 }
 
 /**
+ * Orchestrated Content Processing Job
+ *
+ * Uses the multi-agent orchestrator pipeline when USE_ADK_ORCHESTRATOR=true.
+ * This provides a more modular and maintainable processing flow.
+ *
+ * Pipeline:
+ * 1. InputAnalyzer - Detects type, extracts text from images/audio
+ * 2. ActionDecider - Classifies intent, decides actions, enriches with web data
+ * 3. ActionExecutor - Creates items, generates embeddings, formats output
+ */
+export const orchestratedProcessingJob = inngest.createFunction(
+  {
+    id: "orchestrated-content-processing",
+    retries: 3,
+  },
+  { event: "lifeos/job.orchestrated" },
+  async ({ event, step }) => {
+    const { job_id, user_id, item_id, content_type } =
+      event.data as JobCreatedEvent["data"];
+    const supabase = getServiceClient();
+    const jobStartTime = Date.now();
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // INNGEST JOB START
+    // ═══════════════════════════════════════════════════════════════════════════
+    console.log(`\n[Inngest] ════════════════════════════════════════════════`);
+    console.log(`[Inngest] 🚀 ORCHESTRATED PROCESSING JOB STARTING`);
+    console.log(`[Inngest] ════════════════════════════════════════════════\n`);
+    console.log(`[Inngest] ▶ Job Details:`);
+    console.log(`[Inngest]   └─ job_id: ${job_id}`);
+    console.log(`[Inngest]   └─ user_id: ${user_id}`);
+    console.log(`[Inngest]   └─ item_id: ${item_id}`);
+    console.log(`[Inngest]   └─ content_type: ${content_type}`);
+    console.log(`[Inngest]   └─ timestamp: ${new Date().toISOString()}`);
+
+    // Step 1: Update job status to running
+    console.log(`\n[Inngest] ▶ Step 1/5: Update job status to "running"...`);
+    await step.run("update-job-running", async () => {
+      await supabase
+        .from("jobs")
+        .update({
+          status: "running",
+          started_at: new Date().toISOString(),
+          current_step: 1,
+        })
+        .eq("id", job_id);
+
+      console.log(`[Inngest] ✅ Job status updated to "running"`);
+      return { status: "running" };
+    });
+
+    // Step 2: Fetch item data
+    console.log(`\n[Inngest] ▶ Step 2/5: Fetching item data...`);
+    const item = await step.run("fetch-item", async () => {
+      const { data, error } = await supabase
+        .from("items")
+        .select("*")
+        .eq("id", item_id)
+        .single();
+
+      if (error) {
+        console.error(`[Inngest] ❌ Failed to fetch item: ${error.message}`);
+        throw new Error(`Failed to fetch item: ${error.message}`);
+      }
+
+      console.log(`[Inngest] ✅ Item fetched successfully`);
+      console.log(`[Inngest]   └─ title: ${data.title || "(no title)"}`);
+      console.log(`[Inngest]   └─ url: ${data.url || "(no url)"}`);
+      console.log(
+        `[Inngest]   └─ content_length: ${data.content?.length || 0} chars`,
+      );
+      console.log(`[Inngest]   └─ category: ${data.category || "(none)"}`);
+      console.log(`[Inngest]   └─ source_type: ${data.source_type}`);
+      return data;
+    });
+
+    // Step 3: Run orchestrator pipeline
+    console.log(`\n[Inngest] ▶ Step 3/5: Running ADK Orchestrator Pipeline...`);
+    console.log(`[Inngest]   └─ This will invoke the multi-agent pipeline`);
+    console.log(
+      `[Inngest]   └─ Pipeline: InputAnalyzer → ActionDecider → ActionExecutor`,
+    );
+
+    const orchestratorResult = await step.run(
+      "run-orchestrator-pipeline",
+      async () => {
+        const input: OrchestratorInput = {
+          content: item.content || item.url || "",
+          contentType: content_type as OrchestratorContentType,
+          contentUrl: item.url,
+          userId: user_id,
+          itemId: item_id,
+          jobId: job_id,
+          metadata: item.metadata as Record<string, unknown> | undefined,
+        };
+
+        console.log(`[Inngest] 📋 Orchestrator Input:`);
+        console.log(
+          `[Inngest]   └─ content: ${input.content.slice(0, 100)}${input.content.length > 100 ? "..." : ""}`,
+        );
+        console.log(`[Inngest]   └─ contentType: ${input.contentType}`);
+        console.log(
+          `[Inngest]   └─ contentUrl: ${input.contentUrl || "(none)"}`,
+        );
+
+        const result = await runOrchestratorPipeline(input);
+
+        console.log(`\n[Inngest] 📋 Orchestrator Result:`);
+        console.log(`[Inngest]   └─ success: ${result.success}`);
+        console.log(`[Inngest]   └─ durationMs: ${result.durationMs}`);
+        console.log(`[Inngest]   └─ itemId: ${result.itemId || "(none)"}`);
+        if (result.error) {
+          console.log(`[Inngest]   └─ error: ${result.error}`);
+        }
+        if (result.analysis) {
+          console.log(
+            `[Inngest]   └─ analysis.title: ${result.analysis.title || "(none)"}`,
+          );
+          console.log(
+            `[Inngest]   └─ analysis.confidence: ${result.analysis.confidence}`,
+          );
+          console.log(
+            `[Inngest]   └─ analysis.topics: ${result.analysis.topics?.join(", ") || "(none)"}`,
+          );
+        }
+        console.log(
+          `[Inngest]   └─ actions: ${result.actions?.map((a) => `${a.type}:${a.status}`).join(", ") || "(none)"}`,
+        );
+
+        return result;
+      },
+    );
+
+    // Step 4: Update item with orchestrator results (if not already updated)
+    console.log(
+      `\n[Inngest] ▶ Step 4/5: Updating item with orchestrator results...`,
+    );
+    if (orchestratorResult.success) {
+      await step.run("update-item-from-orchestrator", async () => {
+        const enrichmentData = {
+          summary: orchestratorResult.analysis.summary,
+          topics: orchestratorResult.analysis.topics || [],
+          content_type_detected: orchestratorResult.analysis.contentType,
+          confidence: orchestratorResult.analysis.confidence,
+          entities: orchestratorResult.analysis.entities,
+          processed_at: new Date().toISOString(),
+          orchestrator_actions: orchestratorResult.actions,
+        };
+
+        await supabase
+          .from("items")
+          .update({
+            enrichment: enrichmentData,
+            has_enrichment: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", item_id);
+
+        console.log(`[Inngest] ✅ Item enrichment data saved`);
+        console.log(
+          `[Inngest]   └─ summary_length: ${enrichmentData.summary?.length || 0} chars`,
+        );
+        console.log(
+          `[Inngest]   └─ topics_count: ${enrichmentData.topics.length}`,
+        );
+        console.log(`[Inngest]   └─ confidence: ${enrichmentData.confidence}`);
+        return { updated: true };
+      });
+    } else {
+      console.log(`[Inngest] ⚠️ Skipping item update (orchestrator failed)`);
+    }
+
+    // Step 5: Complete job
+    console.log(`\n[Inngest] ▶ Step 5/5: Completing job...`);
+    const finalResult = await step.run("complete-job", async () => {
+      const result = {
+        orchestrator: orchestratorResult,
+        completed_at: new Date().toISOString(),
+      };
+
+      const finalStatus = orchestratorResult.success ? "completed" : "failed";
+      await supabase
+        .from("jobs")
+        .update({
+          status: finalStatus,
+          result,
+          error_message: orchestratorResult.error,
+          completed_at: new Date().toISOString(),
+          current_step: 5,
+          step_results: [
+            { step: 1, action: "fetch_item", status: "completed" },
+            {
+              step: 2,
+              action: "orchestrator_pipeline",
+              status: orchestratorResult.success ? "completed" : "failed",
+              durationMs: orchestratorResult.durationMs,
+            },
+            {
+              step: 3,
+              action: "update_item",
+              status: orchestratorResult.success ? "completed" : "skipped",
+            },
+          ],
+        })
+        .eq("id", job_id);
+
+      console.log(
+        `[Inngest] ✅ Job record updated with final status: ${finalStatus}`,
+      );
+      return result;
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // INNGEST JOB COMPLETE
+    // ═══════════════════════════════════════════════════════════════════════════
+    const totalDurationMs = Date.now() - jobStartTime;
+    console.log(`\n[Inngest] ════════════════════════════════════════════════`);
+    console.log(
+      `[Inngest] ${orchestratorResult.success ? "✅" : "❌"} ORCHESTRATED PROCESSING JOB ${orchestratorResult.success ? "COMPLETED" : "FAILED"}`,
+    );
+    console.log(`[Inngest] ════════════════════════════════════════════════`);
+    console.log(`[Inngest] 📊 Final Summary:`);
+    console.log(`[Inngest]   └─ job_id: ${job_id}`);
+    console.log(`[Inngest]   └─ item_id: ${item_id}`);
+    console.log(`[Inngest]   └─ success: ${orchestratorResult.success}`);
+    console.log(
+      `[Inngest]   └─ orchestrator_duration: ${orchestratorResult.durationMs}ms`,
+    );
+    console.log(`[Inngest]   └─ total_job_duration: ${totalDurationMs}ms`);
+    if (orchestratorResult.error) {
+      console.log(`[Inngest]   └─ error: ${orchestratorResult.error}`);
+    }
+    console.log(`\n`);
+
+    return {
+      job_id,
+      item_id,
+      status: orchestratorResult.success ? "completed" : "failed",
+      result: finalResult,
+    };
+  },
+);
+
+/**
  * Handle job failure
  *
  * Updates job status and optionally notifies user
@@ -1298,4 +1725,21 @@ export const handleJobFailure = inngest.createFunction(
 );
 
 // Export all functions for registration
-export const functions = [processContentJob, handleJobFailure];
+export const functions = [
+  processContentJob,
+  orchestratedProcessingJob,
+  handleJobFailure,
+];
+
+/**
+ * Get the appropriate processing event based on feature flag
+ *
+ * @param contentType The type of content being processed
+ * @returns The event name to use for job creation
+ */
+export function getProcessingEventName(contentType: string): string {
+  if (isOrchestratorEnabled() && shouldUseOrchestrator(contentType)) {
+    return "lifeos/job.orchestrated";
+  }
+  return "lifeos/job.created";
+}

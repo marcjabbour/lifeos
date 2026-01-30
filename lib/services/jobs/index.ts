@@ -23,10 +23,15 @@ export { functions, processContentJob, handleJobFailure } from "./functions";
 
 // Helper to trigger a job
 import { inngest } from "./inngest";
+import { getProcessingEventName } from "./functions";
 import type { ContentType } from "@/types/database";
 
 /**
  * Trigger content processing job
+ *
+ * Routes to either the standard job or the ADK orchestrator based on:
+ * 1. USE_ADK_ORCHESTRATOR environment variable
+ * 2. Content type compatibility with orchestrator
  */
 export async function triggerContentProcessing(params: {
   job_id: string;
@@ -35,10 +40,22 @@ export async function triggerContentProcessing(params: {
   content_type: ContentType;
 }): Promise<{ success: boolean; error?: string }> {
   try {
+    // Determine which event to use based on feature flag and content type
+    const eventName = getProcessingEventName(params.content_type);
+
+    console.log(
+      `[JobTrigger] Routing job ${params.job_id} to event: ${eventName}`,
+    );
+    console.log(`[JobTrigger]   └─ content_type: ${params.content_type}`);
+    console.log(
+      `[JobTrigger]   └─ USE_ADK_ORCHESTRATOR: ${process.env.USE_ADK_ORCHESTRATOR}`,
+    );
+
     await inngest.send({
-      name: "lifeos/job.created",
+      name: eventName,
       data: params,
     });
+
     return { success: true };
   } catch (err) {
     console.error("Failed to trigger job:", err);

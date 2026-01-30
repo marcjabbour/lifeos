@@ -219,6 +219,18 @@ export async function POST(request: NextRequest) {
           );
           break;
 
+        case "save_audio":
+          responseText = await processAndCreateItem(
+            supabase,
+            whatsappUser.user_id,
+            {
+              type: "audio",
+              mediaUrl: intent.mediaUrl,
+              caption: intent.caption,
+            },
+          );
+          break;
+
         case "save_text":
           responseText = await processAndCreateItem(
             supabase,
@@ -329,7 +341,7 @@ async function processAndCreateItem(
   supabase: ReturnType<typeof getServiceClient>,
   userId: string,
   content: {
-    type: "text" | "image" | "url";
+    type: "text" | "image" | "url" | "audio";
     text?: string;
     mediaUrl?: string;
     url?: string;
@@ -345,6 +357,81 @@ async function processAndCreateItem(
     extractedText?: string;
     title?: string;
   } | null = null;
+
+  // For audio content, create item immediately and let job handle transcription
+  if (content.type === "audio" && content.mediaUrl) {
+    console.log(
+      `[WhatsApp] Processing audio - will transcribe in background job`,
+    );
+
+    // Create a placeholder item for the audio
+    const { data: item, error } = await supabase
+      .from("items")
+      .insert({
+        user_id: userId,
+        title: content.caption || "Voice Message",
+        content: content.caption || "Audio message - transcription pending",
+        url: content.mediaUrl,
+        content_type: "audio",
+        source_type: "whatsapp",
+        category: "audio",
+        tags: ["voice-message"],
+        has_enrichment: false,
+        metadata: {
+          original_caption: content.caption,
+          source: "whatsapp",
+          processed_at: new Date().toISOString(),
+        },
+        is_archived: false,
+        is_completed: false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error(`[WhatsApp] Failed to create audio item:`, error);
+      throw new Error(`Failed to save: ${error.message}`);
+    }
+
+    console.log(`[WhatsApp] Created audio item: ${item.id}`);
+
+    // Trigger job for transcription and enrichment
+    const { data: job } = await supabase
+      .from("jobs")
+      .insert({
+        user_id: userId,
+        item_id: item.id,
+        status: "pending",
+        plan: {
+          reasoning: "Transcribe audio and enrich content",
+          steps: [
+            { action: "transcribe", why: "Convert audio to text" },
+            { action: "perceive", why: "Understand content" },
+            { action: "enrich", why: "Add context" },
+            { action: "embed", why: "Enable semantic search" },
+          ],
+        },
+        current_step: 0,
+        step_results: [],
+      })
+      .select()
+      .single();
+
+    if (job) {
+      await triggerContentProcessing({
+        job_id: job.id,
+        user_id: userId,
+        item_id: item.id,
+        content_type: "audio",
+      });
+    }
+
+    return `🎤 Voice message received!
+
+I'm transcribing your audio now. This usually takes a few seconds.
+
+📝 Check back in your feed shortly to see the full transcription and any insights.`;
+  }
 
   if (content.type === "image" && content.mediaUrl) {
     // Analyze image with GPT-4o Vision
