@@ -1,23 +1,8 @@
 {
   "name": "lifeos",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
-  "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
-    "format": "prettier --write .",
-    "inngest-dev": "npx inngest-cli@latest dev",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:report": "playwright show-report"
-  },
+  "private": true,
+  "description": "LifeOS - Personal knowledge management system",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/marcjabbour/lifeos.git"
@@ -25,43 +10,32 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "bugs": {
     "url": "https://github.com/marcjabbour/lifeos/issues"
   },
   "homepage": "https://github.com/marcjabbour/lifeos#readme",
-  "dependencies": {
-    "@google-cloud/opentelemetry-cloud-monitoring-exporter": "^0.21.0",
-    "@google-cloud/opentelemetry-cloud-trace-exporter": "^3.0.0",
-    "@google-cloud/storage": "^7.18.0",
-    "@google/adk": "^0.2.5",
-    "@supabase/supabase-js": "^2.90.1",
-    "@tailwindcss/postcss": "^4.1.18",
-    "crypto-js": "^4.2.0",
-    "framer-motion": "^12.26.1",
-    "inngest": "^3.27.0",
-    "langfuse": "^3.38.6",
-    "next": "^15.5.9",
-    "openai": "^6.16.0",
-    "react": "^19.2.3",
-    "react-dom": "^19.2.3",
-    "web-push": "^3.6.7",
-    "web-vitals": "^5.1.0",
-    "zod": "^4.3.5"
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules .turbo",
+    "format": "prettier --write .",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "dev:backend": "pnpm --filter backend dev",
+    "dev:adk": "pnpm --filter adk-agent dev",
+    "build:frontend": "pnpm --filter frontend build",
+    "build:backend": "pnpm --filter backend build",
+    "build:packages": "pnpm --filter './packages/*' build"
   },
   "devDependencies": {
-    "@playwright/test": "^1.57.0",
-    "@types/crypto-js": "^4.2.2",
-    "@types/node": "^25.0.7",
-    "@types/react": "^19.2.8",
-    "@types/react-dom": "^19.2.3",
-    "@types/web-push": "^3.6.4",
-    "autoprefixer": "^10.4.23",
-    "eslint": "^9.39.2",
-    "eslint-config-next": "^16.1.1",
-    "postcss": "^8.5.6",
     "prettier": "^3.7.4",
-    "tailwindcss": "^4.1.18",
+    "turbo": "^2.3.0",
     "typescript": "^5.9.3"
   }
 }
