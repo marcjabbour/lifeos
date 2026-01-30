@@ -1,0 +1,19 @@
+FROM node:20-alpine
+
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+WORKDIR /app
+
+# Copy workspace files
+COPY pnpm-workspace.yaml ./
+COPY package.json pnpm-lock.yaml ./
+
+# Install dependencies
+RUN pnpm install
+
+# Copy source (will be mounted in dev mode)
+COPY . .
+
+EXPOSE 3000
+
+CMD ["pnpm", "--filter", "frontend", "dev"]
