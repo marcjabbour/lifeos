@@ -1,23 +1,33 @@
 # LifeOS
 
-AI-powered personal life dashboard with Nova reasoning engine for intelligent content capture, processing, and insights delivery.
+AI-powered personal life dashboard with intelligent content capture, processing, and insights delivery.
 
-## Overview
+## Architecture
 
-LifeOS is a two-part system: **iOS Share Sheet gatherer** + **Web dashboard hub** powered by Nova, a reasoning-first AI assistant that dynamically processes any content without predefined categories.
+LifeOS is a production-ready monorepo with clear separation of concerns:
 
-**Core Innovation:** Nova reasons about what to do with your content, not pattern-matching to categories.
+```
+lifeos/
+├── packages/
+│   ├── shared/          # Shared types, contracts, utilities
+│   └── db/              # Database client & queries
+├── frontend/            # Next.js 15 web application
+├── backend/             # Hono API & Inngest orchestration
+└── services/
+    └── adk-agent/       # Google ADK AI microservice
+```
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 19.x or later
-- npm or yarn
+- Node.js 20.x or later
+- pnpm 9.x
+- Docker & Docker Compose (for containerized deployment)
 - Supabase account
 - OpenAI API key
 
-### Installation
+### Development Setup
 
 ```bash
 # Clone the repository
@@ -25,20 +35,72 @@ git clone https://github.com/marcjabbour/lifeos.git
 cd lifeos
 
 # Install dependencies
-npm install
+pnpm install
 
 # Copy environment variables
 cp .env.example .env.local
 
-# Configure your environment variables (see Configuration section)
+# Build shared packages
+pnpm build:packages
 
-# Run development server
-npm run dev
+# Start all services in development mode
+pnpm dev
 ```
 
-Visit `http://localhost:3000` to see the app.
+### Docker Development
 
-### Configuration
+```bash
+# Start all services with hot reloading
+docker-compose -f docker-compose.dev.yml up
+
+# Or start specific services
+docker-compose -f docker-compose.dev.yml up frontend backend
+```
+
+### Docker Production
+
+```bash
+# Build and start all services
+docker-compose up --build
+
+# Or run in detached mode
+docker-compose up -d --build
+```
+
+## Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend | 3000 | Next.js 15 PWA |
+| Backend | 4000 | Hono API + Inngest |
+| ADK Agent | 4001 | AI processing service |
+| Inngest Dev | 8288 | Job queue dashboard (dev only) |
+
+## Available Scripts
+
+```bash
+# Development
+pnpm dev              # Start all services in dev mode
+pnpm dev:frontend     # Start frontend only
+pnpm dev:backend      # Start backend only
+pnpm dev:adk          # Start ADK agent only
+
+# Building
+pnpm build            # Build all packages and services
+pnpm build:packages   # Build shared packages only
+pnpm build:frontend   # Build frontend only
+pnpm build:backend    # Build backend only
+
+# Quality
+pnpm lint             # Run ESLint across all packages
+pnpm typecheck        # Run TypeScript type checking
+pnpm format           # Format code with Prettier
+
+# Testing
+pnpm test             # Run all tests
+```
+
+## Configuration
 
 Create a `.env.local` file with the following variables:
 
@@ -46,139 +108,81 @@ Create a `.env.local` file with the following variables:
 # Supabase
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+SUPABASE_URL=your_supabase_url
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
-# OpenAI
+# AI Services
 OPENAI_API_KEY=your_openai_key
+GOOGLE_AI_API_KEY=your_google_ai_key
 
 # Langfuse (observability)
 LANGFUSE_PUBLIC_KEY=your_langfuse_public_key
 LANGFUSE_SECRET_KEY=your_langfuse_secret_key
-
-# Push Notifications (VAPID)
-NEXT_PUBLIC_VAPID_PUBLIC_KEY=your_vapid_public_key
-VAPID_PRIVATE_KEY=your_vapid_private_key
+LANGFUSE_HOST=https://cloud.langfuse.com
 
 # Inngest
 INNGEST_EVENT_KEY=your_inngest_event_key
 INNGEST_SIGNING_KEY=your_inngest_signing_key
+
+# Twilio/WhatsApp
+TWILIO_ACCOUNT_SID=your_twilio_sid
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_WHATSAPP_NUMBER=your_whatsapp_number
+
+# Push Notifications (VAPID)
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=your_vapid_public_key
+VAPID_PRIVATE_KEY=your_vapid_private_key
 ```
 
-## Project Structure
+## System Flow
 
 ```
-lifeos/
-├── app/                    # Legacy API routes (being migrated)
-│   └── api/               # Backend API endpoints
-├── src/
-│   ├── app/               # Next.js 15 App Router
-│   │   ├── api/          # New API routes
-│   │   └── (pages)       # Page components
-│   ├── components/       # React components
-│   │   ├── chat/        # Chat interface
-│   │   ├── error/       # Error handling components
-│   │   ├── feed/        # Items feed
-│   │   ├── icons/       # SVG icon components
-│   │   ├── layout/      # Layout components
-│   │   ├── providers/   # Context providers
-│   │   └── ui/          # UI components
-│   └── lib/             # Shared utilities (frontend)
-├── lib/                   # Core libraries (backend)
-│   ├── analytics/       # Web Vitals monitoring
-│   ├── auth/            # Authentication middleware
-│   ├── db/              # Database clients
-│   ├── jobs/            # Background job functions
-│   ├── push/            # Push notifications
-│   ├── pwa/             # PWA utilities
-│   ├── realtime/        # Supabase Realtime
-│   └── validation/      # Input validation schemas
-├── types/                # TypeScript type definitions
-├── public/               # Static assets
-│   ├── icons/           # App icons
-│   ├── manifest.json    # PWA manifest
-│   └── sw.js            # Service worker
-├── e2e/                  # End-to-end tests
-└── docs/                 # Documentation
+WhatsApp/Web/Share → Backend (Hono) → Inngest → ADK Agent → Database → Frontend
+                                                    ↓
+                                              Langfuse (tracing)
 ```
 
-## Available Scripts
-
-```bash
-npm run dev            # Start development server
-npm run build          # Build for production
-npm run start          # Start production server
-npm run lint           # Run ESLint
-npm run format         # Format code with Prettier
-npm run inngest-dev    # Start Inngest dev server
-npm run test:e2e       # Run Playwright E2E tests
-npm run test:e2e:ui    # Run tests with UI
-npm run test:e2e:headed # Run tests with browser visible
-npm run test:e2e:report # View test report
-```
+1. Content arrives via WhatsApp webhook, web app, or iOS share sheet
+2. Backend immediately acknowledges and triggers Inngest job
+3. Inngest calls ADK Agent service for AI processing
+4. Results are persisted to Supabase
+5. Frontend receives real-time updates via Supabase Realtime
 
 ## Key Features
 
-### Nova AI Assistant
-- **Perception Engine**: Quick content analysis via GPT-4o-mini
-- **Reasoning Engine**: Complex decision-making with GPT-4o
-- **Planning System**: Dynamic action plans with durable execution
-- **RAG Integration**: Semantic search via pgvector
-
-### Progressive Web App
-- Installable on iOS/Android
-- Offline support with service worker caching
-- Web Push notifications
-- iOS Share Sheet integration
-
-### Real-time Updates
-- Supabase Realtime subscriptions
-- Live job status updates
-- Instant feed synchronization
-
-## Performance
-
-Performance budgets are enforced:
-- **LCP**: < 2.5s
-- **FID**: < 100ms
-- **CLS**: < 0.1
-- **Bundle size**: < 200KB gzipped
-
-Web Vitals monitoring is built-in and reports to `/api/analytics/vitals`.
-
-## Testing
-
-E2E tests are written with Playwright:
-
-```bash
-# Run all tests
-npm run test:e2e
-
-# Run specific test file
-npx playwright test e2e/feed.spec.ts
-
-# Run in UI mode
-npm run test:e2e:ui
-```
+- **Multi-Agent AI System**: Input analyzer, action decider, and action executor
+- **Progressive Web App**: Installable, offline-capable, push notifications
+- **WhatsApp Integration**: Send content via WhatsApp for processing
+- **Real-time Updates**: Live synchronization via Supabase Realtime
+- **Durable Jobs**: Inngest-powered background processing with retries
 
 ## Deployment
 
-See [DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment instructions.
+### CI/CD
 
-Quick Vercel deployment:
+GitHub Actions workflows handle:
+- **build.yml**: Lint, typecheck, and build Docker images on PR/push
+- **deploy.yml**: Build and push images to GHCR, trigger deployment
+
+### Manual Deployment
 
 ```bash
-# Install Vercel CLI
-npm i -g vercel
+# Build production images
+docker-compose build
 
-# Deploy
-vercel
+# Push to registry (configure registry in docker-compose.yml)
+docker-compose push
+
+# Deploy on server
+docker-compose pull
+docker-compose up -d
 ```
 
-## Architecture
+## Documentation
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for system architecture details.
-
-See [docs/AI-ARCHITECTURE.md](docs/AI-ARCHITECTURE.md) for Nova AI system design.
+- [REFACTOR.md](REFACTOR.md) - Architecture decisions and refactoring plan
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture details
+- [docs/AI-ARCHITECTURE.md](docs/AI-ARCHITECTURE.md) - AI system design
 
 ## Contributing
 

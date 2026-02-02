@@ -1,0 +1,77 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile.dev
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:4000
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY}
+    volumes:
+      - ./frontend/src:/app/frontend/src:ro
+      - ./frontend/public:/app/frontend/public:ro
+      - ./packages/shared/src:/app/packages/shared/src:ro
+      - ./packages/db/src:/app/packages/db/src:ro
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile.dev
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - PORT=4000
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - INNGEST_EVENT_KEY=${INNGEST_EVENT_KEY}
+      - INNGEST_SIGNING_KEY=${INNGEST_SIGNING_KEY}
+      - INNGEST_DEV=1
+      - INNGEST_BASE_URL=http://inngest-dev:8288
+      - ADK_SERVICE_URL=http://adk-agent:4001
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_WHATSAPP_NUMBER=${TWILIO_WHATSAPP_NUMBER}
+    volumes:
+      - ./backend/src:/app/backend/src:ro
+      - ./packages/shared/src:/app/packages/shared/src:ro
+      - ./packages/db/src:/app/packages/db/src:ro
+    depends_on:
+      - adk-agent
+      - inngest-dev
+
+  adk-agent:
+    build:
+      context: .
+      dockerfile: services/adk-agent/Dockerfile.dev
+    ports:
+      - "4001:4001"
+    environment:
+      - NODE_ENV=development
+      - PORT=4001
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-https://cloud.langfuse.com}
+    volumes:
+      - ./services/adk-agent/src:/app/services/adk-agent/src:ro
+      - ./packages/shared/src:/app/packages/shared/src:ro
+
+  inngest-dev:
+    image: inngest/inngest:latest
+    ports:
+      - "8288:8288"
+    environment:
+      - INNGEST_DEV=1
+    command: ["inngest", "dev", "-u", "http://backend:4000/api/inngest"]
+
+networks:
+  default:
+    name: lifeos-dev-network

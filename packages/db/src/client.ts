@@ -16,19 +16,25 @@ export interface ClientOptions {
 let _browserClient: SupabaseClient | null = null;
 let _serviceClient: SupabaseClient | null = null;
 
-function getEnvConfig(): SupabaseConfig {
+function getEnvConfig(requireAnonKey = true): SupabaseConfig {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL;
   const anonKey =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-  if (!url || !anonKey) {
+  if (!url) {
     throw new Error(
-      "Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_ANON_KEY (or NEXT_PUBLIC_ prefixed versions).",
+      "Missing SUPABASE_URL environment variable (or NEXT_PUBLIC_SUPABASE_URL).",
     );
   }
 
-  return { url, anonKey, serviceKey };
+  if (requireAnonKey && !anonKey) {
+    throw new Error(
+      "Missing SUPABASE_ANON_KEY environment variable (or NEXT_PUBLIC_SUPABASE_ANON_KEY).",
+    );
+  }
+
+  return { url, anonKey: anonKey ?? "", serviceKey };
 }
 
 export function createBrowserClient(
@@ -63,7 +69,7 @@ export function createServiceClient(
     return _serviceClient;
   }
 
-  const envConfig = getEnvConfig();
+  const envConfig = getEnvConfig(false);
   const { url, serviceKey } = { ...envConfig, ...config };
 
   if (!serviceKey) {

@@ -1,8 +1,5 @@
 import type { Context, Next } from "hono";
-import { createClient } from "@supabase/supabase-js";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+import { createServiceClient } from "@lifeos/db";
 
 export const authMiddleware = async (c: Context, next: Next) => {
   const authHeader = c.req.header("Authorization");
@@ -12,10 +9,7 @@ export const authMiddleware = async (c: Context, next: Next) => {
   }
 
   const token = authHeader.slice(7);
-
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-    global: { headers: { Authorization: `Bearer ${token}` } },
-  });
+  const supabase = createServiceClient();
 
   const {
     data: { user },

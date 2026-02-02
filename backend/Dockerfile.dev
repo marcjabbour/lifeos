@@ -1,0 +1,32 @@
+FROM node:20-alpine
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+WORKDIR /app
+
+# Copy package files for dependency installation
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/db/package.json ./packages/db/
+COPY backend/package.json ./backend/
+
+# Install all dependencies (including devDependencies)
+RUN pnpm install
+
+# Copy source files
+COPY packages/shared ./packages/shared
+COPY packages/db ./packages/db
+COPY backend ./backend
+COPY turbo.json ./
+
+# Build shared packages
+RUN pnpm --filter @lifeos/shared build
+RUN pnpm --filter @lifeos/db build
+
+EXPOSE 4000
+
+ENV PORT=4000
+
+# Use tsx for hot reloading in development
+CMD ["pnpm", "--filter", "@lifeos/backend", "dev"]
