@@ -92,7 +92,7 @@ export class JobQueries {
       ...additionalData,
     };
 
-    if (status === "processing") {
+    if (status === "running") {
       updateData.started_at = new Date().toISOString();
     } else if (status === "completed" || status === "failed") {
       updateData.completed_at = new Date().toISOString();

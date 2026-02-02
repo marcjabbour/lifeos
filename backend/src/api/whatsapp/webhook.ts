@@ -1,5 +1,10 @@
 import { Hono } from "hono";
-import { createServiceClient } from "@lifeos/db";
+import {
+  createServiceClient,
+  createItemQueries,
+  createJobQueries,
+} from "@lifeos/db";
+import type { ContentType } from "@lifeos/db";
 import {
   getTwilioConfig,
   validateTwilioSignature,
@@ -25,6 +30,8 @@ import {
   formatAudioReceived,
   type FeedItemSummary,
 } from "../../services/whatsapp";
+import type { UserIntent } from "@lifeos/shared";
+import { inngest } from "../../inngest/client";
 import { logger } from "../../utils/logger";
 
 const app = new Hono();
@@ -171,13 +178,13 @@ app.post("/", async (c) => {
         case "save_link":
         case "save_image":
         case "save_text":
+          await handleSaveIntent(supabase, whatsappUser.user_id, intent);
           responseText = formatProcessingAck();
-          // TODO: Trigger Inngest job for async processing
           break;
 
         case "save_audio":
+          await handleSaveIntent(supabase, whatsappUser.user_id, intent);
           responseText = formatAudioReceived();
-          // TODO: Trigger Inngest job for transcription
           break;
 
         case "query":
@@ -247,6 +254,81 @@ async function logOutboundMessage(
     message_type: "text",
     content,
   });
+}
+
+async function handleSaveIntent(
+  supabase: ReturnType<typeof createServiceClient>,
+  userId: string,
+  intent: UserIntent,
+): Promise<{ jobId: string }> {
+  const itemQueries = createItemQueries(supabase, userId);
+  const jobQueries = createJobQueries(supabase, userId);
+
+  let title: string;
+  let content: string | undefined;
+  let url: string | undefined;
+  let mediaUrl: string | undefined;
+  let contentType: ContentType;
+
+  switch (intent.type) {
+    case "save_link":
+      title = intent.url;
+      content = intent.note;
+      url = intent.url;
+      contentType = "url";
+      break;
+    case "save_image":
+      title = intent.caption || "Image from WhatsApp";
+      content = intent.caption;
+      mediaUrl = intent.mediaUrl;
+      contentType = "image";
+      break;
+    case "save_audio":
+      title = intent.caption || "Audio from WhatsApp";
+      content = intent.caption;
+      mediaUrl = intent.mediaUrl;
+      contentType = "text"; // Will be transcribed
+      break;
+    case "save_text":
+      title = intent.text.slice(0, 100);
+      content = intent.text;
+      contentType = "text";
+      break;
+    default:
+      throw new Error(
+        `Unsupported save intent type: ${(intent as UserIntent).type}`,
+      );
+  }
+
+  const item = await itemQueries.create({
+    title,
+    content,
+    url,
+    content_type: contentType,
+    source_type: "whatsapp",
+    metadata: mediaUrl ? { media_url: mediaUrl } : {},
+  });
+
+  logger.info(
+    { itemId: item.id, userId, intentType: intent.type },
+    "Item created from WhatsApp",
+  );
+
+  const job = await jobQueries.create({ item_id: item.id, type: "process" });
+
+  await inngest.send({
+    name: "job/process",
+    data: {
+      jobId: job.id,
+      userId,
+      itemId: item.id,
+      source: "whatsapp",
+    },
+  });
+
+  logger.info({ jobId: job.id, itemId: item.id }, "Inngest job triggered");
+
+  return { jobId: job.id };
 }
 
 async function handleUnknownUser(

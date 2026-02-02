@@ -26,7 +26,7 @@ export const processContent = inngest.createFunction(
     const jobQueries = createJobQueries(supabase, userId);
 
     await step.run("update-job-running", async () => {
-      await jobQueries.updateStatus(jobId, "processing");
+      await jobQueries.updateStatus(jobId, "running");
     });
 
     const item = await step.run("fetch-item", async () => {
@@ -49,8 +49,10 @@ export const processContent = inngest.createFunction(
       jobId,
       content: {
         type: item.content_type ?? "text",
-        text: item.raw_content,
-        mediaUrl: item.media_url,
+        text: item.content ?? item.url,
+        mediaUrl: (item.metadata as Record<string, unknown>)?.media_url as
+          | string
+          | undefined,
       },
       userId,
       itemId,
